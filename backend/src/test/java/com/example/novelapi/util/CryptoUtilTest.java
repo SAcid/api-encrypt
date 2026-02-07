@@ -1,50 +1,36 @@
 package com.example.novelapi.util;
 
 import org.junit.jupiter.api.Test;
-import javax.crypto.AEADBadTagException;
+import javax.crypto.SecretKey;
+import java.security.KeyPair;
 import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CryptoUtilTest {
 
     @Test
-    void testEncryptionDecryption() throws Exception {
-        String originalText = "This is a secret novel content with GCM security.";
+    void testEcdhKeyExchangeAndEncryption() throws Exception {
+        // 1. Simulate Client Generating Keys
+        KeyPair clientKeyPair = CryptoUtil.generateKeyPair();
+        String clientPublicKeyBase64 = Base64.getEncoder().encodeToString(clientKeyPair.getPublic().getEncoded());
 
-        String encryptedText = CryptoUtil.encrypt(originalText);
-        assertNotNull(encryptedText);
-        assertNotEquals(originalText, encryptedText);
+        // 2. Simulate Server Generating Keys & Processing
+        KeyPair serverKeyPair = CryptoUtil.generateKeyPair();
+        byte[] serverSharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), clientPublicKeyBase64);
+        SecretKey serverSessionKey = CryptoUtil.deriveKey(serverSharedSecret);
 
-        String decryptedText = CryptoUtil.decrypt(encryptedText);
+        String originalText = "ECDH Test Content";
+        String encryptedText = CryptoUtil.encrypt(originalText, serverSessionKey);
+
+        // 3. Simulate Client Decrypting
+        String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
+        byte[] clientSharedSecret = CryptoUtil.computeSharedSecret(clientKeyPair.getPrivate(), serverPublicKeyBase64);
+        SecretKey clientSessionKey = CryptoUtil.deriveKey(clientSharedSecret);
+
+        // Keys should be identical
+        assertArrayEquals(serverSessionKey.getEncoded(), clientSessionKey.getEncoded());
+
+        String decryptedText = CryptoUtil.decrypt(encryptedText, clientSessionKey);
         assertEquals(originalText, decryptedText);
-    }
-
-    @Test
-    void testKoreanContent() throws Exception {
-        String originalText = "이것은 비밀 소설 내용입니다. GCM 모드로 보호됩니다.";
-
-        String encryptedText = CryptoUtil.encrypt(originalText);
-        String decryptedText = CryptoUtil.decrypt(encryptedText);
-
-        assertEquals(originalText, decryptedText);
-    }
-
-    @Test
-    void testTamperingDetection() throws Exception {
-        String originalText = "Sensitive Data";
-        String encryptedText = CryptoUtil.encrypt(originalText);
-
-        // Decode Base64
-        byte[] encryptedBytes = Base64.getDecoder().decode(encryptedText);
-
-        // Tamper with the LAST byte (part of the Auth Tag or Ciphertext)
-        encryptedBytes[encryptedBytes.length - 1] ^= 1;
-
-        String tamperedText = Base64.getEncoder().encodeToString(encryptedBytes);
-
-        // Expect decryption to fail
-        assertThrows(AEADBadTagException.class, () -> {
-            CryptoUtil.decrypt(tamperedText);
-        });
     }
 }

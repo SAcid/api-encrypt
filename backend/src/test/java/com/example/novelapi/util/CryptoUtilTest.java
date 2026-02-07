@@ -25,15 +25,31 @@ class CryptoUtilTest {
         SecretKey serverSessionKey = CryptoUtil.deriveKey(serverSharedSecret, salt, info);
 
         String originalText = "ECDH Test Content";
-        String encryptedText = CryptoUtil.encrypt(originalText, serverSessionKey);
+        // Context Info를 AAD로 사용
+        String encryptedText = CryptoUtil.encrypt(originalText, serverSessionKey, info);
 
         String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
         byte[] clientSharedSecret = CryptoUtil.computeSharedSecret(clientKeyPair.getPrivate(), serverPublicKeyBase64);
         SecretKey clientSessionKey = CryptoUtil.deriveKey(clientSharedSecret, salt, info);
 
         assertArrayEquals(serverSessionKey.getEncoded(), clientSessionKey.getEncoded());
-        String decryptedText = CryptoUtil.decrypt(encryptedText, clientSessionKey);
+        String decryptedText = CryptoUtil.decrypt(encryptedText, clientSessionKey, info);
         assertEquals(originalText, decryptedText);
+    }
+
+    @Test
+    void testAadMismatch() throws Exception {
+        KeyPair keyPair = CryptoUtil.generateKeyPair();
+        SecretKey key = CryptoUtil.deriveKey(new byte[32], new byte[32], "info".getBytes(StandardCharsets.UTF_8));
+
+        byte[] aad1 = "context-1".getBytes(StandardCharsets.UTF_8);
+        byte[] aad2 = "context-2".getBytes(StandardCharsets.UTF_8);
+
+        String encrypted = CryptoUtil.encrypt("Secret", key, aad1);
+
+        assertThrows(Exception.class, () -> {
+            CryptoUtil.decrypt(encrypted, key, aad2);
+        });
     }
 
     @Test

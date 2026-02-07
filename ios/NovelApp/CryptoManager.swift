@@ -112,7 +112,7 @@ class CryptoManager {
                 )
                 
                 // 6. 콘텐츠 복호화 (AES-GCM)
-                let decryptedContent = try self.decrypt(base64String: json.content, key: sessionKey)
+                let decryptedContent = try self.decrypt(base64String: json.content, key: sessionKey, infoString: infoString)
                 completion(.success(decryptedContent))
                 
             } catch {
@@ -121,7 +121,7 @@ class CryptoManager {
         }.resume()
     }
     
-    private func decrypt(base64String: String, key: SymmetricKey) throws -> String {
+    private func decrypt(base64String: String, key: SymmetricKey, infoString: String) throws -> String {
         guard let data = Data(base64Encoded: base64String) else {
             throw CryptoError.invalidBase64
         }
@@ -131,7 +131,11 @@ class CryptoManager {
         
         // 데이터 구조: IV(12) + Ciphertext + Tag
         let sealedBox = try AES.GCM.SealedBox(combined: data)
-        let decryptedData = try AES.GCM.open(sealedBox, using: key)
+        
+        // AAD 설정 (Context Binding)
+        let aad = infoString.data(using: .utf8)!
+        
+        let decryptedData = try AES.GCM.open(sealedBox, using: key, authenticating: aad)
         
         guard let decryptedString = String(data: decryptedData, encoding: .utf8) else {
             throw CryptoError.decryptionFailed

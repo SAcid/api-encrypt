@@ -40,7 +40,8 @@ public class NovelController {
         long currentTime = System.currentTimeMillis();
         // 요청 시간이 현재 시간보다 5분 이상 차이가 나면 거부
         if (Math.abs(currentTime - request.timestamp()) > TIMESTAMP_LIMIT_MS) {
-            throw new RuntimeException("Unauthorized: Timestamp expired (인증 실패: 요청 시간 만료)");
+            System.err.println("Timestamp expired: server=" + currentTime + ", client=" + request.timestamp());
+            throw new RuntimeException("Unauthorized");
         }
 
         // 2. 서명(Signature) 검증 (HMAC-SHA256)
@@ -50,12 +51,19 @@ public class NovelController {
             // 서버가 가진 Secret으로 서명 재계산
             String expectedSignature = hmacSha256(dataToSign, CLIENT_SECRET);
 
-            // 클라이언트가 보낸 서명과 일치하는지 확인
-            if (!expectedSignature.equals(request.signature())) {
-                throw new RuntimeException("Unauthorized: Invalid Signature (인증 실패: 서명 불일치)");
+            // 클라이언트가 보낸 서명과 일치하는지 확인 (Timing Attack 방지: MessageDigest.isEqual 사용)
+            if (!java.security.MessageDigest.isEqual(
+                    expectedSignature.getBytes(StandardCharsets.UTF_8),
+                    request.signature().getBytes(StandardCharsets.UTF_8))) {
+                // 상세 에러는 로그로 남기고 클라이언트에는 일반적인 메시지 전달
+                System.err.println(
+                        "Signature mismatch: expected=" + expectedSignature + ", actual=" + request.signature());
+                throw new RuntimeException("Unauthorized");
             }
         } catch (Exception e) {
-            throw new RuntimeException("Unauthorized: Signature verification failed (인증 실패: 서명 검증 오류)");
+            // 상세 에러는 로그로 남기고 클라이언트에는 일반적인 메시지 전달
+            System.err.println("Signature verification error: " + e.getMessage());
+            throw new RuntimeException("Unauthorized");
         }
 
         // 원본 소설 내용
@@ -88,7 +96,8 @@ public class NovelController {
             SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);
 
             // 6. 세션 키로 내용 암호화 (AES-GCM)
-            String encryptedContent = CryptoUtil.encrypt(originalContent, sessionKey);
+            // AAD로 Context Info를 사용하여 암호문에 컨텍스트 바인딩 (Context Binding)
+            String encryptedContent = CryptoUtil.encrypt(originalContent, sessionKey, info);
 
             // 7. 응답 생성 (서버 공개키 + 암호화된 내용)
             String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());

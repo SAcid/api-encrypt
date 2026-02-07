@@ -130,8 +130,16 @@ async function fetchAndDecrypt() {
         const iv = encryptedBytes.slice(0, 12);
         const ciphertext = encryptedBytes.slice(12);
 
+        // AAD (Additional Authenticated Data) 설정
+        const aad = new TextEncoder().encode(infoString);
+
         const decryptedBuffer = await window.crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: iv, tagLength: 128 },
+            {
+                name: "AES-GCM",
+                iv: iv,
+                additionalData: aad, // AAD 추가
+                tagLength: 128
+            },
             sessionKey,
             ciphertext
         );

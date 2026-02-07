@@ -137,7 +137,7 @@ impl CryptoManager {
         
         let payload = Payload {
             msg: ciphertext,
-            aad: &[],
+            aad: info_bytes, // AAD (Context Binding)
         };
 
         let plaintext = cipher.decrypt(nonce.into(), payload)

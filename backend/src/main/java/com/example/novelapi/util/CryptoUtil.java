@@ -88,9 +88,12 @@ public class CryptoUtil {
     /**
      * 파생된 세션 키를 사용하여 평문을 AES-GCM으로 암호화합니다.
      * 
+     * @param plainText 암호화할 평문
+     * @param key       AES 세션 키
+     * @param aad       추가 인증 데이터 (Context Binding)
      * @return Base64(IV + 암호문 + 인증태그)
      */
-    public static String encrypt(String plainText, SecretKey key) throws Exception {
+    public static String encrypt(String plainText, SecretKey key, byte[] aad) throws Exception {
         byte[] clean = plainText.getBytes(StandardCharsets.UTF_8);
 
         // 고유 IV 생성
@@ -101,6 +104,11 @@ public class CryptoUtil {
 
         Cipher cipher = Cipher.getInstance(AEAD_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, key, gcmParameterSpec);
+
+        // AAD 추가
+        if (aad != null && aad.length > 0) {
+            cipher.updateAAD(aad);
+        }
 
         byte[] encrypted = cipher.doFinal(clean);
 
@@ -115,7 +123,7 @@ public class CryptoUtil {
     /**
      * 암호문 복호화 (테스트용)
      */
-    public static String decrypt(String encryptedIvText, SecretKey key) throws Exception {
+    public static String decrypt(String encryptedIvText, SecretKey key, byte[] aad) throws Exception {
         byte[] encryptedIvTextBytes = Base64.getDecoder().decode(encryptedIvText);
 
         // IV 추출
@@ -130,6 +138,11 @@ public class CryptoUtil {
 
         Cipher cipher = Cipher.getInstance(AEAD_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, key, gcmParameterSpec);
+
+        // AAD 추가
+        if (aad != null && aad.length > 0) {
+            cipher.updateAAD(aad);
+        }
 
         byte[] decryptedByte = cipher.doFinal(encryptedBytes);
 

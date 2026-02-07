@@ -110,4 +110,27 @@ object CryptoManager {
         val keyBytes = okm.copyOf(32)
         return SecretKeySpec(keyBytes, "AES")
     }
-}
+    /**
+     * 콘텐츠 복호화 (AES-GCM)
+     */
+    fun decrypt(encryptedContentBase64: String, sessionKey: javax.crypto.SecretKey, infoString: String): String {
+        val encryptedBytes = Base64.decode(encryptedContentBase64, Base64.DEFAULT)
+
+        // IV 추출
+        val iv = ByteArray(IV_SIZE)
+        System.arraycopy(encryptedBytes, 0, iv, 0, IV_SIZE)
+        val gcmParameterSpec = GCMParameterSpec(TAG_LENGTH_BIT, iv)
+
+        // 암호문 추출
+        val ciphertext = ByteArray(encryptedBytes.size - IV_SIZE)
+        System.arraycopy(encryptedBytes, IV_SIZE, ciphertext, 0, ciphertext.size)
+
+        val cipher = Cipher.getInstance(ALGORITHM_AES)
+        cipher.init(Cipher.DECRYPT_MODE, sessionKey, gcmParameterSpec)
+
+        // AAD 설정 (Context Binding)
+        cipher.updateAAD(infoString.toByteArray(StandardCharsets.UTF_8))
+
+        val decryptedBytes = cipher.doFinal(ciphertext)
+        return String(decryptedBytes, StandardCharsets.UTF_8)
+    }

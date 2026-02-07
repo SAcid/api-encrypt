@@ -1,4 +1,4 @@
 package com.example.novelapi.dto;
 
-public record KeyExchangeRequest(String publicKey) {
+public record KeyExchangeRequest(String publicKey, long timestamp, String signature) {
 }

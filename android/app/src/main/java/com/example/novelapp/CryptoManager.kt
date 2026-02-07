@@ -18,26 +18,33 @@ object CryptoManager {
     private const val IV_SIZE = 12
     private const val TAG_LENGTH_BIT = 128
     
+    private const val CLIENT_SECRET = "auth-secret-1234"
+    
     private val HKDF_SALT = "novel-api-salt".toByteArray(StandardCharsets.UTF_8)
     private val HKDF_INFO = "aes-gcm-key".toByteArray(StandardCharsets.UTF_8)
 
-    // Using a simple callback interface for demo purposes
     interface DecryptCallback {
         fun onSuccess(content: String)
         fun onError(e: Exception)
     }
+    
+    // --- Helper for generating Auth Signature ---
+    fun generateAuth(publicKeyBase64: String): Pair<Long, String> {
+        val timestamp = System.currentTimeMillis()
+        val data = publicKeyBase64 + timestamp
+        
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(CLIENT_SECRET.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
+        
+        val signatureBytes = mac.doFinal(data.toByteArray(StandardCharsets.UTF_8))
+        val signatureBase64 = Base64.encodeToString(signatureBytes, Base64.NO_WRAP)
+        
+        return Pair(timestamp, signatureBase64)
+    }
 
     /**
-     * ECDH Key Exchange and Decryption flow would typically involve a network call.
-     * Since this class focuses on Crypto, we will simulate the steps or provide helper functions
-     * that the Activity/ViewModel would call.
-     * 
-     * For this example, we provide the primitives:
-     * 1. generateClientKeys() -> Pair<PrivateKey, PublicKeyBase64>
-     * 2. deriveSessionKey(clientPrivateKey, serverPublicKeyBase64) -> SecretKey
-     * 3. decryptContent(encryptedContentBase64, sessionKey) -> String
+     * ECDH Key Exchange Support
      */
-
     fun generateClientKeys(): Pair<java.security.PrivateKey, String> {
         val kpg = KeyPairGenerator.getInstance(ALGORITHM_EC)
         kpg.initialize(256)
@@ -47,18 +54,15 @@ object CryptoManager {
     }
 
     fun deriveSessionKey(clientPrivateKey: java.security.PrivateKey, serverPublicKeyBase64: String): javax.crypto.SecretKey {
-        // 1. Decode Server Public Key
         val serverBytes = Base64.decode(serverPublicKeyBase64, Base64.DEFAULT)
         val kf = KeyFactory.getInstance(ALGORITHM_EC)
         val serverPublicKey = kf.generatePublic(X509EncodedKeySpec(serverBytes))
 
-        // 2. ECDH Shared Secret
         val ka = KeyAgreement.getInstance("ECDH")
         ka.init(clientPrivateKey)
         ka.doPhase(serverPublicKey, true)
         val sharedSecret = ka.generateSecret()
 
-        // 3. HKDF-SHA256
         return hkdfSha256(sharedSecret)
     }
 
@@ -77,18 +81,15 @@ object CryptoManager {
     }
 
     private fun hkdfSha256(inputKeyingMaterial: ByteArray): javax.crypto.SecretKey {
-        // HKDF-Extract (Simulated with simple HMAC)
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(HKDF_SALT, "HmacSHA256"))
         val prk = mac.doFinal(inputKeyingMaterial)
 
-        // HKDF-Expand
         mac.init(SecretKeySpec(prk, "HmacSHA256"))
         mac.update(HKDF_INFO)
-        mac.update(0x01.toByte()) // Counter
+        mac.update(0x01.toByte())
         val okm = mac.doFinal()
 
-        // Take first 32 bytes
         val keyBytes = okm.copyOf(32)
         return SecretKeySpec(keyBytes, "AES")
     }

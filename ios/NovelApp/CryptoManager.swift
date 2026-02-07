@@ -4,7 +4,9 @@ import CryptoKit
 class CryptoManager {
     static let shared = CryptoManager()
     
-    // Salt and Info for HKDF (Must match Server)
+    // Auth Secret (Ideally obfuscated)
+    private let clientSecret = "auth-secret-1234".data(using: .utf8)!
+    
     private let hkdfSalt = "novel-api-salt".data(using: .utf8)!
     private let hkdfInfo = "aes-gcm-key".data(using: .utf8)!
     
@@ -19,20 +21,13 @@ class CryptoManager {
         case invalidBase64
         case decryptionFailed
         case keyExchangeFailed
+        case signatureFailed
     }
     
-    /// Performs full ECDH Key Exchange and Decryption
-    /// 1. Generates Client Key Pair
-    /// 2. Sends Public Key to Server
-    /// 3. Derives Session Key from Server's Public Key
-    /// 4. Decrypts Content
     func fetchAndDecrypt(novelId: String, completion: @escaping (Result<String, Error>) -> Void) {
-        // 1. Generate Ephemeral Key Pair (P-256)
+        // 1. Generate Ephemeral Key Pair
         let clientPrivateKey = P256.KeyAgreement.PrivateKey()
         let clientPublicKey = clientPrivateKey.publicKey
-        
-        // Export Public Key to X.509/SPKI (Base64)
-        // Note: CryptoKit's `derRepresentation` allows exporting as SPKI.
         
         guard let clientPublicKeyDER = try? clientPublicKey.derRepresentation else {
             completion(.failure(CryptoError.keyExchangeFailed))
@@ -40,19 +35,37 @@ class CryptoManager {
         }
         let clientPublicKeyBase64 = clientPublicKeyDER.base64EncodedString()
         
+        // --- NEW: Generate HMAC Signature ---
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let dataToSign = "\(clientPublicKeyBase64)\(timestamp)".data(using: .utf8)!
+        
+        let symmetricKey = SymmetricKey(data: clientSecret)
+        let signature = HMAC<SHA256>.authenticationCode(for: dataToSign, using: symmetricKey)
+        let signatureBase64 = Data(signature).base64EncodedString()
+        // ------------------------------------
+        
         // 2. Send to Server
         guard let url = URL(string: "http://localhost:8080/api/novels/\(novelId)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body = ["publicKey": clientPublicKeyBase64]
+        let body: [String: Any] = [
+            "publicKey": clientPublicKeyBase64,
+            "timestamp": timestamp,
+            "signature": signatureBase64
+        ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(.failure(error))
                 return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                 completion(.failure(CryptoError.keyExchangeFailed)) // Or specific auth error
+                 return
             }
             
             guard let data = data,
@@ -80,7 +93,7 @@ class CryptoManager {
                     outputByteCount: 32
                 )
                 
-                // 6. Decrypt content (Base64 -> AES-GCM)
+                // 6. Decrypt content
                 let decryptedContent = try self.decrypt(base64String: json.content, key: sessionKey)
                 completion(.success(decryptedContent))
                 
@@ -97,13 +110,6 @@ class CryptoManager {
         
         let ivSize = 12
         guard data.count > ivSize else { throw CryptoError.decryptionFailed }
-        
-        let iv = data.prefix(ivSize)
-        let ciphertext = data.dropFirst(ivSize)
-        
-        // CryptoKit expects IV + Ciphertext + Tag
-        // Our backend manually concatenates them: IV + Ciphertext + Tag
-        // This matches `AES.GCM.SealedBox(combined:)`.
         
         let sealedBox = try AES.GCM.SealedBox(combined: data)
         let decryptedData = try AES.GCM.open(sealedBox, using: key)

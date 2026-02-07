@@ -3,7 +3,11 @@ use aes_gcm::{Aes256Gcm, KeyInit, aead::{Aead, Key, Payload}};
 use hkdf::Hkdf;
 use sha2::Sha256;
 use hmac::{Hmac, Mac};
+// Import Digest KeyInit for HMAC - Removed to avoid ambiguity
+// use sha2::digest::KeyInit as _; 
 use p256::{PublicKey, ecdh::EphemeralSecret, NistP256};
+// Import PKCS8 traits for key encoding/decoding
+use p256::pkcs8::{DecodePublicKey, EncodePublicKey};
 use rand_core::OsRng;
 use base64::{Engine as _, engine::general_purpose};
 
@@ -57,7 +61,7 @@ impl CryptoManager {
         let data_to_sign = format!("{}{}", self.public_key_base64, timestamp);
         
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(CLIENT_SECRET)
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(CLIENT_SECRET)
             .map_err(|_| JsValue::from_str("HMAC Init Failed"))?;
         
         mac.update(data_to_sign.as_bytes());
@@ -80,16 +84,28 @@ impl CryptoManager {
         // 2. ECDH: Compute Shared Secret
         let secret = self.secret_key.take().ok_or("Secret key already used or missing")?;
         let shared_secret = secret.diffie_hellman(&server_public);
-        let shared_secret_bytes = shared_secret.raw_secret_bytes();
+        
+        // --- Zeroization Applied ---
+        // shared_secret_bytes ref is immutable, so we copy it to a zeroizable buffer
+        let mut shared_secret_vec = shared_secret.raw_secret_bytes().to_vec();
 
         // 3. HKDF: Derive AES Key
-        let hkdf = Hkdf::<Sha256>::new(Some(HKDF_SALT), shared_secret_bytes.as_slice());
+        let hkdf = Hkdf::<Sha256>::new(Some(HKDF_SALT), &shared_secret_vec);
+        
+        // Explicitly zeroize shared secret copy immediately after use
+        use zeroize::Zeroize;
+        shared_secret_vec.zeroize();
+
         let mut okm = [0u8; 32];
         hkdf.expand(HKDF_INFO, &mut okm)
             .map_err(|_| JsValue::from_str("HKDF Failed"))?;
         
         let session_key = Key::<Aes256Gcm>::from_slice(&okm);
         let cipher = Aes256Gcm::new(session_key);
+
+        // Zeroize intermediate HKDF output (session key material)
+        okm.zeroize();
+        // ---------------------------
 
         // 4. Decrypt AES-GCM
         let encrypted_bytes = general_purpose::STANDARD.decode(encrypted_content_base64)

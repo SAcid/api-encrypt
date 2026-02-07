@@ -17,16 +17,19 @@ class CryptoUtilTest {
         KeyPair clientKeyPair = CryptoUtil.generateKeyPair();
         String clientPublicKeyBase64 = Base64.getEncoder().encodeToString(clientKeyPair.getPublic().getEncoded());
 
+        byte[] salt = new byte[32]; // Dummy Salt
+        byte[] info = "novel-id:test|user:test".getBytes(StandardCharsets.UTF_8); // Dummy Info
+
         KeyPair serverKeyPair = CryptoUtil.generateKeyPair();
         byte[] serverSharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), clientPublicKeyBase64);
-        SecretKey serverSessionKey = CryptoUtil.deriveKey(serverSharedSecret);
+        SecretKey serverSessionKey = CryptoUtil.deriveKey(serverSharedSecret, salt, info);
 
         String originalText = "ECDH Test Content";
         String encryptedText = CryptoUtil.encrypt(originalText, serverSessionKey);
 
         String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
         byte[] clientSharedSecret = CryptoUtil.computeSharedSecret(clientKeyPair.getPrivate(), serverPublicKeyBase64);
-        SecretKey clientSessionKey = CryptoUtil.deriveKey(clientSharedSecret);
+        SecretKey clientSessionKey = CryptoUtil.deriveKey(clientSharedSecret, salt, info);
 
         assertArrayEquals(serverSessionKey.getEncoded(), clientSessionKey.getEncoded());
         String decryptedText = CryptoUtil.decrypt(encryptedText, clientSessionKey);

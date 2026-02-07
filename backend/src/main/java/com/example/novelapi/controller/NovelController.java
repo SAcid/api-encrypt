@@ -77,7 +77,15 @@ public class NovelController {
             byte[] sharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), request.publicKey());
 
             // 5. AES 세션 키 유도 (HKDF 사용)
-            SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret);
+            // 5-1. Salt 추출 (Client Nonce)
+            byte[] salt = Base64.getDecoder().decode(request.salt());
+
+            // 5-2. Info 생성 (Context Binding: novel-id + user-id)
+            // 예: "novel-id:123|user:test"
+            String infoString = "novel-id:" + id + "|user:test";
+            byte[] info = infoString.getBytes(StandardCharsets.UTF_8);
+
+            SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);
 
             // 6. 세션 키로 내용 암호화 (AES-GCM)
             String encryptedContent = CryptoUtil.encrypt(originalContent, sessionKey);

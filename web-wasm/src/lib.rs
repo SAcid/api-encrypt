@@ -8,7 +8,7 @@ use hmac::{Hmac, Mac};
 use p256::{PublicKey, ecdh::EphemeralSecret, NistP256};
 // Import PKCS8 traits for key encoding/decoding
 use p256::pkcs8::{DecodePublicKey, EncodePublicKey};
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 use base64::{Engine as _, engine::general_purpose};
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -24,13 +24,15 @@ extern "C" {
 }
 
 const CLIENT_SECRET: &[u8] = b"auth-secret-1234";
-const HKDF_SALT: &[u8] = b"novel-api-salt";
-const HKDF_INFO: &[u8] = b"aes-gcm-key";
+// HKDF Constants removed - using dynamic values
+// const HKDF_SALT: &[u8] = b"novel-api-salt";
+// const HKDF_INFO: &[u8] = b"aes-gcm-key";
 
 #[wasm_bindgen]
 pub struct CryptoManager {
     secret_key: Option<EphemeralSecret>,
     public_key_base64: String,
+    salt: Option<Vec<u8>>,
 }
 
 #[wasm_bindgen]
@@ -48,6 +50,7 @@ impl CryptoManager {
         CryptoManager {
             secret_key: Some(secret),
             public_key_base64: base64,
+            salt: None,
         }
     }
 
@@ -56,7 +59,7 @@ impl CryptoManager {
         self.public_key_base64.clone()
     }
 
-    pub fn generate_auth_signature(&self) -> Result<String, JsValue> {
+    pub fn generate_auth_signature(&mut self) -> Result<String, JsValue> {
         let timestamp = js_sys::Date::now().round() as u64;
         let data_to_sign = format!("{}{}", self.public_key_base64, timestamp);
         
@@ -68,12 +71,18 @@ impl CryptoManager {
         let result = mac.finalize();
         let signature_base64 = general_purpose::STANDARD.encode(result.into_bytes());
 
-        // Return JSON: { timestamp, signature }
-        let json = format!(r#"{{"timestamp": {}, "signature": "{}"}}"#, timestamp, signature_base64);
+        // Generate Random Salt for HKDF
+        let mut salt = [0u8; 32];
+        OsRng.fill_bytes(&mut salt);
+        let salt_base64 = general_purpose::STANDARD.encode(salt);
+        self.salt = Some(salt.to_vec());
+
+        // Return JSON: { timestamp, signature, salt }
+        let json = format!(r#"{{"timestamp": {}, "signature": "{}", "salt": "{}"}}"#, timestamp, signature_base64, salt_base64);
         Ok(json)
     }
 
-    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str) -> Result<String, JsValue> {
+    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str, novel_id: &str) -> Result<String, JsValue> {
         // 1. Decode Server Public Key
         let server_pub_bytes = general_purpose::STANDARD.decode(server_pub_key_base64)
             .map_err(|_| JsValue::from_str("Invalid Base64 Server Key"))?;
@@ -90,14 +99,20 @@ impl CryptoManager {
         let mut shared_secret_vec = shared_secret.raw_secret_bytes().to_vec();
 
         // 3. HKDF: Derive AES Key
-        let hkdf = Hkdf::<Sha256>::new(Some(HKDF_SALT), &shared_secret_vec);
+        // Use stored Dynamic Salt
+        let salt = self.salt.as_ref().ok_or("Salt not generated")?;
+        let hkdf = Hkdf::<Sha256>::new(Some(salt), &shared_secret_vec);
         
         // Explicitly zeroize shared secret copy immediately after use
         use zeroize::Zeroize;
         shared_secret_vec.zeroize();
 
+        // Construct Context-Specific Info: "novel-id:{id}|user:test"
+        let info_string = format!("novel-id:{}|user:test", novel_id);
+        let info_bytes = info_string.as_bytes();
+
         let mut okm = [0u8; 32];
-        hkdf.expand(HKDF_INFO, &mut okm)
+        hkdf.expand(info_bytes, &mut okm)
             .map_err(|_| JsValue::from_str("HKDF Failed"))?;
         
         let session_key = Key::<Aes256Gcm>::from_slice(&okm);

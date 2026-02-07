@@ -52,6 +52,11 @@ async function fetchAndDecrypt() {
         const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
         // ------------------------------------
 
+        // --- NEW: Random Salt 생성 ---
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(32));
+        const saltBase64 = btoa(String.fromCharCode(...saltBytes));
+        // -----------------------------
+
         // 3. 서버로 키 교환 요청 (인증 정보 포함)
         statusDiv.innerText = "서버와 키 교환 중 (인증 포함)...";
         const response = await fetch(API_URL, {
@@ -60,7 +65,8 @@ async function fetchAndDecrypt() {
             body: JSON.stringify({
                 publicKey: clientPublicKeyBase64,
                 timestamp: timestamp,
-                signature: signatureBase64
+                signature: signatureBase64,
+                salt: saltBase64 // Dynamic Salt 전송
             })
         });
 
@@ -99,12 +105,15 @@ async function fetchAndDecrypt() {
             ["deriveKey"]
         );
 
+        // Info: "novel-id:1|user:test" (Context Binding)
+        const infoString = "novel-id:1|user:test";
+
         const sessionKey = await window.crypto.subtle.deriveKey(
             {
                 name: "HKDF",
                 hash: "SHA-256",
-                salt: new TextEncoder().encode("novel-api-salt"),
-                info: new TextEncoder().encode("aes-gcm-key")
+                salt: saltBytes, // Use generated salt
+                info: new TextEncoder().encode(infoString) // Use Context Info
             },
             hkdfKey,
             { name: "AES-GCM", length: 256 },

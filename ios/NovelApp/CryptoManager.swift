@@ -7,9 +7,9 @@ class CryptoManager {
     // Auth Secret (실제 앱에서는 난독화하거나 안전하게 보관해야 함)
     private let clientSecret = "auth-secret-1234".data(using: .utf8)!
     
-    // HKDF용 Salt와 Info
-    private let hkdfSalt = "novel-api-salt".data(using: .utf8)!
-    private let hkdfInfo = "aes-gcm-key".data(using: .utf8)!
+    // HKDF용 Salt와 Info는 이제 동적으로 생성됩니다.
+    // private let hkdfSalt = ...
+    // private let hkdfInfo = ...
     
     private init() {}
     
@@ -48,6 +48,14 @@ class CryptoManager {
         let signatureBase64 = Data(signature).base64EncodedString()
         // -----------------------
         
+        // --- NEW: Random Salt 생성 ---
+        var salt = Data(count: 32)
+        let result = salt.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!)
+        }
+        let saltBase64 = salt.base64EncodedString()
+        // -----------------------------
+
         // 2. 서버로 전송 (POST)
         guard let url = URL(string: "http://localhost:8080/api/novels/\(novelId)") else { return }
         var request = URLRequest(url: url)
@@ -57,7 +65,8 @@ class CryptoManager {
         let body: [String: Any] = [
             "publicKey": clientPublicKeyBase64,
             "timestamp": timestamp,
-            "signature": signatureBase64
+            "signature": signatureBase64,
+            "salt": saltBase64 // Dynamic Salt 전송
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
@@ -91,10 +100,14 @@ class CryptoManager {
                 let sharedSecret = try clientPrivateKey.sharedSecretFromKeyAgreement(with: serverPublicKey)
                 
                 // 5. AES 세션 키 유도 (HKDF)
+                // Info: "novel-id:{id}|user:test"
+                let infoString = "novel-id:\(novelId)|user:test"
+                let infoData = infoString.data(using: .utf8)!
+                
                 let sessionKey = sharedSecret.hkdfDerivedSymmetricKey(
                     using: SHA256.self,
-                    salt: self.hkdfSalt,
-                    sharedInfo: self.hkdfInfo,
+                    salt: salt, // Generated Salt
+                    sharedInfo: infoData, // Context Binding Info
                     outputByteCount: 32
                 )
                 

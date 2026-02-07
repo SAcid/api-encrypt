@@ -23,9 +23,11 @@ public class CryptoUtil {
     private static final int TAG_LENGTH_BIT = 128; // 인증 태그 길이
     private static final String EC_ALGORITHM = "EC";
 
-    // HKDF용 Salt와 Info (클라이언트와 서버가 동일해야 함)
-    private static final byte[] HKDF_SALT = "novel-api-salt".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] HKDF_INFO = "aes-gcm-key".getBytes(StandardCharsets.UTF_8);
+    // HKDF용 Salt와 Info는 이제 동적으로 전달받습니다.
+    // private static final byte[] HKDF_SALT =
+    // "novel-api-salt".getBytes(StandardCharsets.UTF_8);
+    // private static final byte[] HKDF_INFO =
+    // "aes-gcm-key".getBytes(StandardCharsets.UTF_8);
 
     // --- ECDH Key Exchange ---
 
@@ -57,18 +59,22 @@ public class CryptoUtil {
 
     /**
      * 공유 비밀(Shared Secret)로부터 AES 암호화 키를 유도합니다 (HKDF-SHA256 사용).
+     * 
+     * @param sharedSecret ECDH 공유 비밀
+     * @param salt         HKDF Salt (Client Nonce)
+     * @param info         HKDF Info (Context Binding)
      */
-    public static SecretKey deriveKey(byte[] sharedSecret) throws Exception {
+    public static SecretKey deriveKey(byte[] sharedSecret, byte[] salt, byte[] info) throws Exception {
         // HKDF 구현 (Extract & Expand 단계)
 
         // 1. Extract: 공유 비밀을 고정 길이의 PRK(Pseudorandom Key)로 추출
         Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(HKDF_SALT, "HmacSHA256"));
+        mac.init(new SecretKeySpec(salt, "HmacSHA256"));
         byte[] prk = mac.doFinal(sharedSecret);
 
         // 2. Expand: PRK를 사용하여 AES 키 길이(32바이트)만큼 확장
         mac.init(new SecretKeySpec(prk, "HmacSHA256"));
-        mac.update(HKDF_INFO);
+        mac.update(info);
         mac.update((byte) 0x01); // Counter
         byte[] okm = mac.doFinal();
 

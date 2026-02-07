@@ -6,6 +6,7 @@ package com.example.novelapi.dto;
  * @param publicKey 클라이언트의 ECDH 공개키 (Base64)
  * @param timestamp 요청 생성 시간 (Replay Attack 방지)
  * @param signature 인증 서명 (HMAC-SHA256)
+ * @param salt      HKDF용 동적 솔트 (Base64)
  */
-public record KeyExchangeRequest(String publicKey, long timestamp, String signature) {
+public record KeyExchangeRequest(String publicKey, long timestamp, String signature, String salt) {
 }

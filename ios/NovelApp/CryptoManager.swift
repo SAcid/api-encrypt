@@ -38,16 +38,6 @@ class CryptoManager {
         }
         let clientPublicKeyBase64 = clientPublicKeyDER.base64EncodedString()
         
-        // --- HMAC 서명 생성 ---
-        // 현재 시간(Timestamp) + 공개키를 조합하여 서명
-        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
-        let dataToSign = "\(clientPublicKeyBase64)\(timestamp)".data(using: .utf8)!
-        
-        let symmetricKey = SymmetricKey(data: clientSecret)
-        let signature = HMAC<SHA256>.authenticationCode(for: dataToSign, using: symmetricKey)
-        let signatureBase64 = Data(signature).base64EncodedString()
-        // -----------------------
-        
         // --- NEW: Random Salt 생성 ---
         var salt = Data(count: 32)
         let result = salt.withUnsafeMutableBytes {
@@ -55,6 +45,16 @@ class CryptoManager {
         }
         let saltBase64 = salt.base64EncodedString()
         // -----------------------------
+
+        // --- HMAC 서명 생성 ---
+        // 현재 시간(Timestamp) + 공개키 + Salt를 조합하여 서명
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let dataToSign = "\(clientPublicKeyBase64)\(timestamp)\(saltBase64)".data(using: .utf8)!
+        
+        let symmetricKey = SymmetricKey(data: clientSecret)
+        let signature = HMAC<SHA256>.authenticationCode(for: dataToSign, using: symmetricKey)
+        let signatureBase64 = Data(signature).base64EncodedString()
+        // -----------------------
 
         // 2. 서버로 전송 (POST)
         guard let url = URL(string: "http://localhost:8080/api/novels/\(novelId)") else { return }

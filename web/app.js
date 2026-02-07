@@ -28,10 +28,15 @@ async function fetchAndDecrypt() {
         );
         const clientPublicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedPublicKey)));
 
+        // --- NEW: Random Salt 생성 ---
+        const saltBytes = window.crypto.getRandomValues(new Uint8Array(32));
+        const saltBase64 = btoa(String.fromCharCode(...saltBytes));
+        // -----------------------------
+
         // --- NEW: HMAC 인증 서명 생성 ---
-        // 타임스탬프와 공개키를 조합하고, Client Secret으로 서명하여 자신이 유효한 클라이언트임을 증명
+        // 타임스탬프와 공개키 + Salt를 조합하고 서명
         const timestamp = Date.now();
-        const dataToSign = clientPublicKeyBase64 + timestamp;
+        const dataToSign = clientPublicKeyBase64 + timestamp + saltBase64;
         const infoEncoder = new TextEncoder();
 
         // HMAC 키 import
@@ -51,11 +56,6 @@ async function fetchAndDecrypt() {
         );
         const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
         // ------------------------------------
-
-        // --- NEW: Random Salt 생성 ---
-        const saltBytes = window.crypto.getRandomValues(new Uint8Array(32));
-        const saltBase64 = btoa(String.fromCharCode(...saltBytes));
-        // -----------------------------
 
         // 3. 서버로 키 교환 요청 (인증 정보 포함)
         statusDiv.innerText = "서버와 키 교환 중 (인증 포함)...";

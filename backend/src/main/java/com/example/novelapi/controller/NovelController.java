@@ -45,8 +45,8 @@ public class NovelController {
 
         // 2. 서명(Signature) 검증 (HMAC-SHA256)
         try {
-            // 서명 대상 데이터: 공개키 + 타임스탬프
-            String dataToSign = request.publicKey() + request.timestamp();
+            // 서명 대상 데이터: 공개키 + 타임스탬프 + Salt (무결성 강화)
+            String dataToSign = request.publicKey() + request.timestamp() + request.salt();
             // 서버가 가진 Secret으로 서명 재계산
             String expectedSignature = hmacSha256(dataToSign, CLIENT_SECRET);
 

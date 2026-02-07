@@ -36,11 +36,12 @@ object CryptoManager {
     /**
      * 인증 서명 생성 (HMAC-SHA256)
      * @param publicKeyBase64 내 공개키
+     * @param saltBase64 Random Salt
      * @return Pair(Timestamp, Signature)
      */
-    fun generateAuth(publicKeyBase64: String): Pair<Long, String> {
+    fun generateAuth(publicKeyBase64: String, saltBase64: String): Pair<Long, String> {
         val timestamp = System.currentTimeMillis()
-        val data = publicKeyBase64 + timestamp
+        val data = publicKeyBase64 + timestamp + saltBase64
         
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(CLIENT_SECRET.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))

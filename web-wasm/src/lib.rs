@@ -61,7 +61,15 @@ impl CryptoManager {
 
     pub fn generate_auth_signature(&mut self) -> Result<String, JsValue> {
         let timestamp = js_sys::Date::now().round() as u64;
-        let data_to_sign = format!("{}{}", self.public_key_base64, timestamp);
+
+        // Generate Random Salt first
+        let mut salt = [0u8; 32];
+        OsRng.fill_bytes(&mut salt);
+        let salt_base64 = general_purpose::STANDARD.encode(salt);
+        self.salt = Some(salt.to_vec());
+
+        // Sign: PublicKey + Timestamp + Salt
+        let data_to_sign = format!("{}{}{}", self.public_key_base64, timestamp, salt_base64);
         
         type HmacSha256 = Hmac<Sha256>;
         let mut mac = <HmacSha256 as Mac>::new_from_slice(CLIENT_SECRET)
@@ -70,12 +78,6 @@ impl CryptoManager {
         mac.update(data_to_sign.as_bytes());
         let result = mac.finalize();
         let signature_base64 = general_purpose::STANDARD.encode(result.into_bytes());
-
-        // Generate Random Salt for HKDF
-        let mut salt = [0u8; 32];
-        OsRng.fill_bytes(&mut salt);
-        let salt_base64 = general_purpose::STANDARD.encode(salt);
-        self.salt = Some(salt.to_vec());
 
         // Return JSON: { timestamp, signature, salt }
         let json = format!(r#"{{"timestamp": {}, "signature": "{}", "salt": "{}"}}"#, timestamp, signature_base64, salt_base64);

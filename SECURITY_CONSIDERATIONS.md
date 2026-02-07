@@ -144,7 +144,10 @@ HMAC이 **"요청자가 누구인가"**를 검증한다면, 키 검증은 **"교
 ### 2) Key Confirmation (키 확약)
 *   **개념**: 키 교환 직후, 양쪽이 동일한 비밀키(Shared Secret)를 생성했는지 확인하는 절차입니다.
 *   **현재 구현 (Implicit)**: 별도의 확인 메시지 없이, **AES-GCM 암호화** 자체가 키 확약 역할을 합니다.
-    *   서버가 생성한 세션 키로 암호화한 데이터를, 클라이언트가 복호화에 성공(Tag 검증 통과)하면 **수학적으로 키 일치가 증명**됩니다.
+### 3) Salt Integrity (Salt 무결성)
+*   **구현**: `HMAC Signature` 생성 시 `Salt`를 포함하여 서명합니다.
+*   **서명 데이터**: `PublicKey + Timestamp + Salt`
+*   **효과**: 전송 중 Salt가 변조되면 서명 검증 단계에서 즉시 차단됩니다.
 *   **참고 (Explicit)**: 더 명시적인 확인이 필요하다면, 핸드셰이크 단계에서 `HMAC(SessionKey, "Confirmation")` 값을 주고받도록 프로토콜을 확장할 수 있습니다.
 
 ### 3) Proof of Possession (키 소유 증명)

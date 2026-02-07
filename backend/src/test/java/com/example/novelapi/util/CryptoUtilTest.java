@@ -41,8 +41,9 @@ class CryptoUtilTest {
         String clientSecret = "auth-secret-1234";
         String publicKey = "somePublicKeyBase64";
         long timestamp = 1678888888000L;
+        String salt = "someSaltBase64";
 
-        String data = publicKey + timestamp;
+        String data = publicKey + timestamp + salt;
 
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(clientSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));

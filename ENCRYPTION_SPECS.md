@@ -45,6 +45,41 @@ sequenceDiagram
     Note over Client: 11. Content 복호화
 ```
 
-## 인증 정보 (Demo)
-- **CLIENT_SECRET**: `auth-secret-1234`
-- **Encryption Algorithm**: AES-256-GCM (Derived from ECDH)
+## 2. 상세 암호화/복호화 프로세스 (Detailed Cryptographic Process)
+
+### Step 1: 키 생성 (Key Generation)
+*   **알고리즘**: Elliptic Curve Diffie-Hellman (ECDH)
+*   **Curve**: `secp256r1` (NIST P-256)
+*   **Public Key Format**: X.509 `SubjectPublicKeyInfo` (SPKI)
+*   **Private Key Format**: PKCS#8
+
+### Step 2: 키 교환 (Key Exchange)
+*   **입력**: `My Private Key`, `Peer Public Key`
+*   **출력**: `Shared Secret` (32 bytes)
+*   **설명**: 표준 ECDH 알고리즘을 사용하여 양쪽이 동일한 공유 비밀을 계산합니다.
+
+### Step 3: 키 유도 (Key Derivation - HKDF)
+공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function)** 를 통해 안전한 세션 키를 유도합니다.
+*   **Algorithm**: `HKDF-SHA256`
+*   **Salt**: `"novel-api-salt"` (UTF-8 bytes)
+*   **Info**: `"aes-gcm-key"` (UTF-8 bytes)
+*   **Output**: 32 bytes (256 bits) -> **AES Session Key**
+
+### Step 4: 데이터 암호화 (Data Encryption - AES-GCM)
+*   **Algorithm**: `AES/GCM/NoPadding`
+*   **Key**: Step 3에서 유도된 `Session Key` (32 bytes)
+*   **IV (Initialization Vector)**: 매 요청마다 생성되는 Random 12 bytes
+*   **Tag Length**: 128 bits
+*   **출력 포맷**: `Base64(IV + Ciphertext + Tag)`
+    *   앞 12바이트: IV
+    *   나머지: 암호문 + 인증 태그(Tag는 자동으로 붙음)
+
+### Step 5: 클라이언트 인증 (Client Authentication)
+*   **Algorithm**: `HMAC-SHA256`
+*   **Secret**: `CLIENT_SECRET` ("auth-secret-1234")
+*   **Data to Sign**: `ClientPublicKey(Base64)` + `Timestamp(Long as String)`
+*   **Verification**: 키 교환 전에 서명을 검증하여 허가된 클라이언트인지 확인.
+
+## 참고 정보 (Demo)
+*   **CLIENT_SECRET**: `auth-secret-1234`
+*   **Test URL**: `POST http://localhost:8080/api/novels/1`

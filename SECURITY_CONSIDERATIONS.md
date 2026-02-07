@@ -86,6 +86,19 @@
 *   **Info**: 파생되는 키의 용도를 구분하는 식별자입니다 (Context Binding). 예: "aes-key", "hmac-key" 등.
 *   **결론**: 이 값들은 프로토콜의 일부로서 공개되어도 안전합니다. 중요한 것은 **ECDH Private Key**와 **HMAC CLIENT_SECRET**입니다.
 
+### 고급 설정 (Advanced Configuration)
+만약 **키 교환의 독립성**과 **컨텍스트 결합**을 더 강화하고 싶다면 다음 설정을 고려할 수 있습니다.
+
+**1. Dynamic Salt (동적 솔트)**
+*   **현재**: 고정값(`"novel-api-salt"`) 사용.
+*   **강화**: 클라이언트가 요청 시 `Random Nonce`를 보내고, 이를 Salt로 사용합니다.
+*   **효과**: 설령 ECDH 난수(Ephemeral Key) 생성기에 결함이 있어도, 해커가 미리 계산된 테이블(Rainbow Table)을 사용할 수 없게 만듭니다.
+
+**2. Context-Specific Info (컨텍스트 바인딩)**
+*   **현재**: 고정값(`"aes-gcm-key"`) 사용.
+*   **강화**: `Info = "novel-id:123|user:test"`.
+*   **효과**: 다른 용도(예: 결제 정보)로 생성된 키가 소설 복호화에 절대 사용될 수 없도록 수학적으로 격리합니다.
+
 ### 결론
 보안 강화를 위해 약 10ms 내외의 연산 비용이 추가되었으나, 이는 **텍스트 콘텐츠 서비스에서 무시할 수 있는 수준**입니다. 대규모 트래픽 발생 시 서버 CPU 부하가 증가할 수 있으므로, 필요 시 **세션 재사용 (Session Resumption)** 전략을 도입하여 ECDH 연산 횟수를 줄일 수 있습니다.
 
@@ -137,3 +150,19 @@ HMAC이 **"요청자가 누구인가"**를 검증한다면, 키 검증은 **"교
 ### 3) Proof of Possession (키 소유 증명)
 *   **방법**: 클라이언트가 ECDH 일회용 키(Ephemeral Key)로 무작위 값(Nonce)을 서명하여 전송. (ECDSA)
 *   **주의**: ECDH 키를 서명용으로 혼용하는 것은 보안 권장사항(NIST)에 어긋날 수 있어 신중해야 합니다. 일반적으로는 **Key Confirmation**만으로 충분합니다.
+
+## 10. 비인가 ECDH 요청 방어 (Defense against Unauthorized Exchange)
+"누구나 ECDH 키를 만들어 요청하면 서버가 받아주는가?"에 대한 방어책입니다.
+
+### 1) HMAC Client Authentication (1차 방어 - 현재 적용됨)
+*   **동작**: 클라이언트는 ECDH 공개키를 보낼 때, `HMAC(PublicKey + Timestamp, CLIENT_SECRET)` 서명을 동봉해야 합니다.
+*   **효과**: `CLIENT_SECRET`을 모르는 공격자가 무작위로 생성한 ECDH 키로 요청을 보내면, **서버는 서명 검증 단계에서 즉시 거부(Reject)**합니다. 즉, ECDH 연산을 수행하지 않으므로 자원 소모도 최소화됩니다.
+
+### 2) User Session Binding (2차 방어 - 권장)
+*   **동작**: 키 교환 요청 헤더에 **로그인 세션 토큰(JWT/SessionID)**을 포함시킵니다.
+*   **효과**: "우리 앱 사용자(로그인됨)"임이 확인된 경우에만 키 교환을 허용합니다.
+*   **구현**: `NovelController`에 Spring Security 또는 Interceptor를 적용하여 `@PreAuthorize("isAuthenticated()")` 검사를 수행합니다.
+
+### 3) Rate Limiting (3차 방어)
+*   **동작**: 동일 IP나 세션에서 과도한 키 교환 요청 시 차단합니다.
+*   **효과**: DoS 공격이나 무차별 대입 공격 방어.

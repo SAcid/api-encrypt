@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="km">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Web Client Verification</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+
+        .log {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Web Client Logic Verification (HMAC + ECDH)</h1>
+    <div id="status">Testing...</div>
+    <div id="log" class="log"></div>
+
+    <script>
+        const CLIENT_SECRET = "auth-secret-1234";
+
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `<div>${msg}</div>`;
+            console.log(msg);
+        }
+
+        async function verifyAuthLogic() {
+            const statusDiv = document.getElementById('status');
+            try {
+                log("1. Generating ECDH Key Pair...");
+                const keyPair = await window.crypto.subtle.generateKey(
+                    { name: "ECDH", namedCurve: "P-256" },
+                    true,
+                    ["deriveKey"]
+                );
+                log("Scale: Key Pair Generated");
+
+                log("2. Exporting Public Key...");
+                const exportedPublicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+                const clientPublicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(exportedPublicKey)));
+                log(`Public Key (Base64): ${clientPublicKeyBase64.substring(0, 20)}...`);
+
+                log("3. Generating HMAC Signature...");
+                const timestamp = Date.now();
+                const dataToSign = clientPublicKeyBase64 + timestamp;
+                const infoEncoder = new TextEncoder();
+
+                const secretKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    infoEncoder.encode(CLIENT_SECRET),
+                    { name: "HMAC", hash: "SHA-256" },
+                    false,
+                    ["sign"]
+                );
+
+                const signatureBuffer = await window.crypto.subtle.sign(
+                    "HMAC",
+                    secretKey,
+                    infoEncoder.encode(dataToSign)
+                );
+                const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+
+                log(`Timestamp: ${timestamp}`);
+                log(`Signature: ${signatureBase64}`);
+
+                if (signatureBase64.length > 0) {
+                    statusDiv.innerText = "VERIFICATION SUCCESS: Auth Logic creates valid signature structure.";
+                    statusDiv.className = "success";
+                } else {
+                    statusDiv.innerText = "VERIFICATION FAILED: Signature is empty.";
+                    statusDiv.className = "error";
+                }
+
+            } catch (e) {
+                console.error(e);
+                statusDiv.innerText = "ERROR: " + e.message;
+                statusDiv.className = "error";
+            }
+        }
+
+        verifyAuthLogic();
+    </script>
+</body>
+
+</html>

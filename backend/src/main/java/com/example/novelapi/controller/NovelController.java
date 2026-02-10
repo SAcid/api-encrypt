@@ -2,6 +2,7 @@ package com.example.novelapi.controller;
 
 import com.example.novelapi.dto.KeyExchangeRequest;
 import com.example.novelapi.dto.NovelResponse;
+import com.example.novelapi.service.ReplayGuardService;
 import com.example.novelapi.util.CryptoUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,12 @@ public class NovelController {
     // 클라이언트 인증을 위한 비밀 키 (환경 변수 NOVEL_CLIENT_SECRET 또는 application.properties에서 주입)
     @Value("${novel.client-secret}")
     private String clientSecret;
+
+    private final ReplayGuardService replayGuardService;
+
+    public NovelController(ReplayGuardService replayGuardService) {
+        this.replayGuardService = replayGuardService;
+    }
 
     // 타임스탬프 유효 시간 (5분): Replay Attack 방지
     private static final long TIMESTAMP_LIMIT_MS = 5 * 60 * 1000;
@@ -63,6 +70,12 @@ public class NovelController {
             throw e; // Unauthorized 예외는 그대로 전파
         } catch (Exception e) {
             System.err.println("Signature verification error: " + e.getClass().getSimpleName());
+            throw new RuntimeException("Unauthorized");
+        }
+
+        // 3. Replay Attack 방어 (Redis Nonce 검증)
+        if (!replayGuardService.checkAndMark(request.publicKey(), request.timestamp(), request.salt())) {
+            System.err.println("Replay attack detected for request timestamp=" + request.timestamp());
             throw new RuntimeException("Unauthorized");
         }
 

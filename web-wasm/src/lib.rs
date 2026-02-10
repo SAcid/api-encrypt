@@ -33,6 +33,9 @@ pub struct CryptoManager {
     secret_key: Option<EphemeralSecret>,
     public_key_base64: String,
     salt: Option<Vec<u8>>,
+    // Streaming 세션용 필드
+    session_cipher: Option<Aes256Gcm>,
+    session_info: Option<Vec<u8>>,
 }
 
 #[wasm_bindgen]
@@ -51,6 +54,8 @@ impl CryptoManager {
             secret_key: Some(secret),
             public_key_base64: base64,
             salt: None,
+            session_cipher: None,
+            session_info: None,
         }
     }
 
@@ -84,7 +89,9 @@ impl CryptoManager {
         Ok(json)
     }
 
-    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str, novel_id: &str, timestamp: f64) -> Result<String, JsValue> {
+    /// 스트리밍 세션 초기화: ECDH + HKDF를 수행하고 세션 키를 내부에 저장합니다.
+    /// 이후 decrypt_chunk()로 개별 chunk를 복호화할 수 있습니다.
+    pub fn init_session(&mut self, server_pub_key_base64: &str, novel_id: &str, timestamp: f64) -> Result<(), JsValue> {
         // 1. Decode Server Public Key
         let server_pub_bytes = general_purpose::STANDARD.decode(server_pub_key_base64)
             .map_err(|_| JsValue::from_str("Invalid Base64 Server Key"))?;
@@ -96,42 +103,48 @@ impl CryptoManager {
         let secret = self.secret_key.take().ok_or("Secret key already used or missing")?;
         let shared_secret = secret.diffie_hellman(&server_public);
         
-        // --- Zeroization Applied ---
-        // shared_secret_bytes ref is immutable, so we copy it to a zeroizable buffer
         let mut shared_secret_vec = shared_secret.raw_secret_bytes().to_vec();
 
         // 3. HKDF: Derive AES Key
-        // Use stored Dynamic Salt
         let salt = self.salt.as_ref().ok_or("Salt not generated")?;
         let hkdf = Hkdf::<Sha256>::new(Some(salt), &shared_secret_vec);
         
-        // Explicitly zeroize shared secret copy immediately after use
         use zeroize::Zeroize;
         shared_secret_vec.zeroize();
 
-        // Construct Context-Specific Info: "novel-id:{id}|ts:{timestamp}"
-        // timestamp is f64 from JS, convert to u64
         let timestamp_u64 = timestamp as u64;
         let info_string = format!("novel-id:{}|ts:{}", novel_id, timestamp_u64);
-        let info_bytes = info_string.as_bytes();
+        let info_bytes = info_string.as_bytes().to_vec();
 
         let mut okm = [0u8; 32];
-        hkdf.expand(info_bytes, &mut okm)
+        hkdf.expand(&info_bytes, &mut okm)
             .map_err(|_| JsValue::from_str("HKDF Failed"))?;
         
         let session_key = Key::<Aes256Gcm>::from_slice(&okm);
         let cipher = Aes256Gcm::new(session_key);
 
-        // Zeroize intermediate HKDF output (session key material)
         okm.zeroize();
-        // ---------------------------
 
-        // 4. Decrypt AES-GCM
-        let encrypted_bytes = general_purpose::STANDARD.decode(encrypted_content_base64)
-            .map_err(|_| JsValue::from_str("Invalid Base64 Content"))?;
+        // 세션 상태 저장
+        self.session_cipher = Some(cipher);
+        self.session_info = Some(info_bytes);
+
+        log("Session initialized for streaming decryption");
+        Ok(())
+    }
+
+    /// 개별 chunk를 복호화합니다. init_session()이 먼저 호출되어야 합니다.
+    pub fn decrypt_chunk(&self, encrypted_chunk_base64: &str) -> Result<String, JsValue> {
+        let cipher = self.session_cipher.as_ref()
+            .ok_or(JsValue::from_str("Session not initialized. Call init_session() first."))?;
+        let info_bytes = self.session_info.as_ref()
+            .ok_or(JsValue::from_str("Session info not available"))?;
+
+        let encrypted_bytes = general_purpose::STANDARD.decode(encrypted_chunk_base64)
+            .map_err(|_| JsValue::from_str("Invalid Base64 Chunk"))?;
         
         if encrypted_bytes.len() < 12 {
-            return Err(JsValue::from_str("Content too short"));
+            return Err(JsValue::from_str("Chunk too short"));
         }
 
         let nonce = &encrypted_bytes[..12];
@@ -139,13 +152,21 @@ impl CryptoManager {
         
         let payload = Payload {
             msg: ciphertext,
-            aad: info_bytes, // AAD (Context Binding)
+            aad: info_bytes,
         };
 
         let plaintext = cipher.decrypt(nonce.into(), payload)
-            .map_err(|_| JsValue::from_str("Decryption Failed"))?;
+            .map_err(|_| JsValue::from_str("Chunk Decryption Failed"))?;
 
         String::from_utf8(plaintext)
-            .map_err(|_| JsValue::from_str("Invalid UTF-8 Plaintext"))
+            .map_err(|_| JsValue::from_str("Invalid UTF-8 in Chunk"))
+    }
+
+    /// 기존 일괄 복호화 (비스트리밍용)
+    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str, novel_id: &str, timestamp: f64) -> Result<String, JsValue> {
+        // init_session을 호출하여 세션 초기화
+        self.init_session(server_pub_key_base64, novel_id, timestamp)?;
+        // decrypt_chunk로 복호화
+        self.decrypt_chunk(encrypted_content_base64)
     }
 }

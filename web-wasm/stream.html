@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Novel API — Streaming (WebAssembly/Rust)</title>
+    <style>
+        body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: 'Pretendard', sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+        }
+
+        h1 {
+            color: #00d4aa;
+            font-size: 1.4em;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .controls label {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        .controls input[type="number"] {
+            width: 80px;
+            padding: 6px 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #fff;
+            font-size: 0.95em;
+        }
+
+        button {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #00d4aa, #0099ff);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.85;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .box {
+            border: 1px solid #222;
+            padding: 24px;
+            border-radius: 12px;
+            background: #16162b;
+            margin-top: 16px;
+        }
+
+        #content {
+            white-space: pre-wrap;
+            line-height: 1.8;
+            font-size: 1.05em;
+            min-height: 100px;
+        }
+
+        .status {
+            color: #888;
+            font-size: 0.85em;
+            margin-top: 8px;
+        }
+
+        .error {
+            color: #ff6b6b;
+        }
+
+        .progress-bar {
+            height: 3px;
+            background: #222;
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4aa, #0099ff);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .stats {
+            display: flex;
+            gap: 24px;
+            margin-top: 8px;
+            font-size: 0.8em;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>📖 소설 뷰어 — Streaming (Rust Wasm)</h1>
+
+    <div class="controls">
+        <label for="chunkSize">Chunk 크기 (문자 수):</label>
+        <input type="number" id="chunkSize" value="50" min="10" max="1000">
+        <button id="startBtn" onclick="runStreamingClient()">스트리밍 시작</button>
+    </div>
+
+    <div class="box">
+        <div id="content"></div>
+        <div class="progress-bar">
+            <div class="fill" id="progressFill"></div>
+        </div>
+        <div class="stats">
+            <span id="chunkCount">Chunks: 0/0</span>
+            <span id="elapsed">경과: 0ms</span>
+        </div>
+        <div id="status" class="status">준비됨</div>
+    </div>
+
+    <script type="module">
+        import init, { CryptoManager } from './pkg/web_wasm.js';
+
+        window.runStreamingClient = async function () {
+            const statusDiv = document.getElementById('status');
+            const contentDiv = document.getElementById('content');
+            const progressFill = document.getElementById('progressFill');
+            const chunkCountSpan = document.getElementById('chunkCount');
+            const elapsedSpan = document.getElementById('elapsed');
+            const startBtn = document.getElementById('startBtn');
+            const chunkSize = document.getElementById('chunkSize').value;
+
+            contentDiv.innerText = '';
+            progressFill.style.width = '0%';
+            startBtn.disabled = true;
+
+            const startTime = performance.now();
+
+            try {
+                statusDiv.innerText = 'Wasm 모듈 로딩 중...';
+                await init();
+
+                statusDiv.innerText = '키 생성 중 (Rust)...';
+                const cryptoManager = new CryptoManager();
+                const publicKey = cryptoManager.public_key;
+
+                // Auth Signature
+                const authJsonStr = cryptoManager.generate_auth_signature();
+                const authData = JSON.parse(authJsonStr);
+
+                const novelId = '1';
+                statusDiv.innerText = '서버 연결 중 (SSE)...';
+
+                // POST SSE: fetch + ReadableStream (EventSource는 GET만 지원)
+                const response = await fetch(
+                    `http://localhost:8080/api/novels/${novelId}/stream?chunkSize=${chunkSize}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            publicKey: publicKey,
+                            timestamp: authData.timestamp,
+                            signature: authData.signature,
+                            salt: authData.salt
+                        })
+                    }
+                );
+
+                if (!response.ok) throw new Error(`서버 오류: ${response.status}`);
+
+                // SSE 파싱 (ReadableStream)
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let totalChunks = 0;
+                let receivedChunks = 0;
+                let sessionInitialized = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // SSE 이벤트 파싱 (이벤트는 빈 줄로 구분)
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop(); // 마지막은 미완성 이벤트일 수 있음
+
+                    for (const eventBlock of events) {
+                        if (!eventBlock.trim()) continue;
+
+                        const lines = eventBlock.split('\n');
+                        let eventType = '';
+                        let eventData = '';
+
+                        for (const line of lines) {
+                            if (line.startsWith('event:')) {
+                                eventType = line.substring(6).trim();
+                            } else if (line.startsWith('data:')) {
+                                eventData = line.substring(5).trim();
+                            }
+                        }
+
+                        if (eventType === 'init') {
+                            const initPayload = JSON.parse(eventData);
+                            totalChunks = initPayload.totalChunks;
+
+                            // 세션 초기화 (ECDH + HKDF)
+                            cryptoManager.init_session(
+                                initPayload.publicKey,
+                                novelId,
+                                initPayload.timestamp
+                            );
+                            sessionInitialized = true;
+
+                            statusDiv.innerText = `스트리밍 수신 중... (${totalChunks} chunks)`;
+                            chunkCountSpan.innerText = `Chunks: 0/${totalChunks}`;
+
+                        } else if (eventType === 'chunk' && sessionInitialized) {
+                            const chunkPayload = JSON.parse(eventData);
+
+                            // Rust Wasm으로 개별 chunk 복호화
+                            const decrypted = cryptoManager.decrypt_chunk(chunkPayload.content);
+                            contentDiv.innerText += decrypted;
+
+                            receivedChunks++;
+                            const progress = (receivedChunks / totalChunks) * 100;
+                            progressFill.style.width = progress + '%';
+                            chunkCountSpan.innerText = `Chunks: ${receivedChunks}/${totalChunks}`;
+                            elapsedSpan.innerText = `경과: ${Math.round(performance.now() - startTime)}ms`;
+
+                        } else if (eventType === 'done') {
+                            const elapsed = Math.round(performance.now() - startTime);
+                            elapsedSpan.innerText = `경과: ${elapsed}ms`;
+                            statusDiv.innerText = `✅ 완료! (${totalChunks} chunks, ${elapsed}ms)`;
+                            progressFill.style.width = '100%';
+                        }
+                    }
+                }
+
+            } catch (e) {
+                console.error(e);
+                statusDiv.innerText = '오류: ' + e;
+                statusDiv.className = 'status error';
+            } finally {
+                startBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+
+</html>

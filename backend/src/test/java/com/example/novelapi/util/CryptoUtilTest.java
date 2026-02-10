@@ -61,11 +61,29 @@ class CryptoUtilTest {
 
         String data = publicKey + timestamp + salt;
 
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(clientSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        byte[] signatureBytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        String signature = Base64.getEncoder().encodeToString(signatureBytes);
+        // Generate signature using Utility
+        String signature = CryptoUtil.generateHmacSignature(data, clientSecret);
 
         assertNotNull(signature);
+
+        // Verify manual generation matches
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(clientSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] expectedBytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+        String expected = Base64.getEncoder().encodeToString(expectedBytes);
+
+        assertEquals(expected, signature);
+    }
+
+    @Test
+    void testHmacSignatureMismatch() throws Exception {
+        String clientSecret = "auth-secret-1234";
+        String data = "data";
+        String signature = CryptoUtil.generateHmacSignature(data, clientSecret);
+
+        String wrongSecret = "wrong-secret";
+        String wrongSignature = CryptoUtil.generateHmacSignature(data, wrongSecret);
+
+        assertNotEquals(signature, wrongSignature);
     }
 }

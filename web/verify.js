@@ -19,9 +19,15 @@ async function verifyAuthLogic() {
         const clientPublicKeyBase64 = Buffer.from(exportedPublicKey).toString('base64');
         console.log(`2. Public Key Exported: ${clientPublicKeyBase64.substring(0, 20)}...`);
 
+        // 2a. Generate Random Salt
+        const saltBytes = crypto.getRandomValues(new Uint8Array(32));
+        const saltBase64 = Buffer.from(saltBytes).toString('base64');
+        console.log(`2a. Salt Generated: ${saltBase64.substring(0, 20)}...`);
+
         // 3. Generate HMAC Signature
         const timestamp = Date.now();
-        const dataToSign = clientPublicKeyBase64 + timestamp;
+        // Signature Data: publicKey + timestamp + salt
+        const dataToSign = clientPublicKeyBase64 + timestamp + saltBase64;
         const infoEncoder = new TextEncoder();
 
         const secretKey = await crypto.subtle.importKey(

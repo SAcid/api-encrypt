@@ -84,7 +84,7 @@ impl CryptoManager {
         Ok(json)
     }
 
-    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str, novel_id: &str) -> Result<String, JsValue> {
+    pub fn decrypt_content(&mut self, server_pub_key_base64: &str, encrypted_content_base64: &str, novel_id: &str, timestamp: f64) -> Result<String, JsValue> {
         // 1. Decode Server Public Key
         let server_pub_bytes = general_purpose::STANDARD.decode(server_pub_key_base64)
             .map_err(|_| JsValue::from_str("Invalid Base64 Server Key"))?;
@@ -109,8 +109,10 @@ impl CryptoManager {
         use zeroize::Zeroize;
         shared_secret_vec.zeroize();
 
-        // Construct Context-Specific Info: "novel-id:{id}|user:test"
-        let info_string = format!("novel-id:{}|user:test", novel_id);
+        // Construct Context-Specific Info: "novel-id:{id}|ts:{timestamp}"
+        // timestamp is f64 from JS, convert to u64
+        let timestamp_u64 = timestamp as u64;
+        let info_string = format!("novel-id:{}|ts:{}", novel_id, timestamp_u64);
         let info_bytes = info_string.as_bytes();
 
         let mut okm = [0u8; 32];

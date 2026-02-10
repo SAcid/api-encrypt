@@ -3,11 +3,10 @@ package com.example.novelapi.controller;
 import com.example.novelapi.dto.KeyExchangeRequest;
 import com.example.novelapi.dto.NovelResponse;
 import com.example.novelapi.util.CryptoUtil;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
-import javax.crypto.Mac;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.util.Base64;
@@ -21,8 +20,9 @@ import java.util.Base64;
 @CrossOrigin(origins = "*") // 데모 목적: 모든 도메인에서의 접근 허용
 public class NovelController {
 
-    // 클라이언트 인증을 위한 비밀 키 (실무에서는 환경 변수나 보안 저장소에 보관해야 함)
-    private static final String CLIENT_SECRET = "auth-secret-1234";
+    // 클라이언트 인증을 위한 비밀 키 (환경 변수 NOVEL_CLIENT_SECRET 또는 application.properties에서 주입)
+    @Value("${novel.client-secret}")
+    private String clientSecret;
 
     // 타임스탬프 유효 시간 (5분): Replay Attack 방지
     private static final long TIMESTAMP_LIMIT_MS = 5 * 60 * 1000;
@@ -40,7 +40,7 @@ public class NovelController {
         long currentTime = System.currentTimeMillis();
         // 요청 시간이 현재 시간보다 5분 이상 차이가 나면 거부
         if (Math.abs(currentTime - request.timestamp()) > TIMESTAMP_LIMIT_MS) {
-            System.err.println("Timestamp expired: server=" + currentTime + ", client=" + request.timestamp());
+            System.err.println("Timestamp validation failed");
             throw new RuntimeException("Unauthorized");
         }
 
@@ -49,20 +49,20 @@ public class NovelController {
             // 서명 대상 데이터: 공개키 + 타임스탬프 + Salt (무결성 강화)
             String dataToSign = request.publicKey() + request.timestamp() + request.salt();
             // 서버가 가진 Secret으로 서명 재계산
-            String expectedSignature = hmacSha256(dataToSign, CLIENT_SECRET);
+            String expectedSignature = CryptoUtil.generateHmacSignature(dataToSign, clientSecret);
 
             // 클라이언트가 보낸 서명과 일치하는지 확인 (Timing Attack 방지: MessageDigest.isEqual 사용)
             if (!java.security.MessageDigest.isEqual(
                     expectedSignature.getBytes(StandardCharsets.UTF_8),
                     request.signature().getBytes(StandardCharsets.UTF_8))) {
-                // 상세 에러는 로그로 남기고 클라이언트에는 일반적인 메시지 전달
-                System.err.println(
-                        "Signature mismatch: expected=" + expectedSignature + ", actual=" + request.signature());
+                // 민감 정보(expected 값) 노출 방지: 불일치 사실만 기록
+                System.err.println("Signature verification failed for request timestamp=" + request.timestamp());
                 throw new RuntimeException("Unauthorized");
             }
+        } catch (RuntimeException e) {
+            throw e; // Unauthorized 예외는 그대로 전파
         } catch (Exception e) {
-            // 상세 에러는 로그로 남기고 클라이언트에는 일반적인 메시지 전달
-            System.err.println("Signature verification error: " + e.getMessage());
+            System.err.println("Signature verification error: " + e.getClass().getSimpleName());
             throw new RuntimeException("Unauthorized");
         }
 
@@ -88,9 +88,9 @@ public class NovelController {
             // 5-1. Salt 추출 (Client Nonce)
             byte[] salt = Base64.getDecoder().decode(request.salt());
 
-            // 5-2. Info 생성 (Context Binding: novel-id + user-id)
-            // 예: "novel-id:123|user:test"
-            String infoString = "novel-id:" + id + "|user:test";
+            // 5-2. Info 생성 (Context Binding: novel-id + timestamp)
+            // 클라이언트가 보낸 timestamp를 사용하여 요청별 고유 컨텍스트 생성
+            String infoString = "novel-id:" + id + "|ts:" + request.timestamp();
             byte[] info = infoString.getBytes(StandardCharsets.UTF_8);
 
             SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);
@@ -99,25 +99,14 @@ public class NovelController {
             // AAD로 Context Info를 사용하여 암호문에 컨텍스트 바인딩 (Context Binding)
             String encryptedContent = CryptoUtil.encrypt(originalContent, sessionKey, info);
 
-            // 7. 응답 생성 (서버 공개키 + 암호화된 내용)
+            // 7. 응답 생성 (서버 공개키 + 암호화된 내용 + timestamp)
             String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
 
-            return new NovelResponse(serverPublicKeyBase64, encryptedContent);
+            return new NovelResponse(serverPublicKeyBase64, encryptedContent, request.timestamp());
 
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Encryption failed (암호화 실패): " + e.getMessage());
+            System.err.println("Encryption processing error: " + e.getClass().getSimpleName());
+            throw new RuntimeException("Encryption failed");
         }
-    }
-
-    /**
-     * HMAC-SHA256 서명을 생성하는 유틸리티 메서드
-     */
-    private String hmacSha256(String data, String secret) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] rawHmac = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        return Base64.getEncoder().encodeToString(rawHmac);
     }
 }

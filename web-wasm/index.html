@@ -82,8 +82,8 @@
 
                 statusDiv.innerText = "복호화 중 (Rust)...";
                 // Decrypt Logic (in Rust)
-                // Pass novelId for Context Binding Info reconstruction
-                const plainText = cryptoManager.decrypt_content(json.publicKey, json.content, novelId);
+                // Pass novelId and timestamp for Context Binding Info reconstruction
+                const plainText = cryptoManager.decrypt_content(json.publicKey, json.content, novelId, json.timestamp);
 
                 contentDiv.innerText = plainText;
                 statusDiv.innerText = "완료! (WebAssembly)";

@@ -75,7 +75,7 @@ object CryptoManager {
     /**
      * 세션 키 유도 (ECDH + HKDF)
      */
-    fun deriveSessionKey(clientPrivateKey: java.security.PrivateKey, serverPublicKeyBase64: String, saltBase64: String, infoString: String): javax.crypto.SecretKey {
+    fun deriveSessionKey(clientPrivateKey: java.security.PrivateKey, serverPublicKeyBase64: String, saltBase64: String, novelId: String, timestamp: Long): javax.crypto.SecretKey {
         // 1. 서버 공개키 디코딩
         val serverBytes = Base64.decode(serverPublicKeyBase64, Base64.DEFAULT)
         val kf = KeyFactory.getInstance(ALGORITHM_EC)
@@ -89,6 +89,8 @@ object CryptoManager {
 
         // 3. AES 키 유도 (HKDF)
         val salt = Base64.decode(saltBase64, Base64.DEFAULT)
+        // Info: "novel-id:{id}|ts:{timestamp}"
+        val infoString = "novel-id:$novelId|ts:$timestamp"
         val info = infoString.toByteArray(StandardCharsets.UTF_8)
         return hkdfSha256(sharedSecret, salt, info)
     }
@@ -113,7 +115,7 @@ object CryptoManager {
     /**
      * 콘텐츠 복호화 (AES-GCM)
      */
-    fun decrypt(encryptedContentBase64: String, sessionKey: javax.crypto.SecretKey, infoString: String): String {
+    fun decrypt(encryptedContentBase64: String, sessionKey: javax.crypto.SecretKey, novelId: String, timestamp: Long): String {
         val encryptedBytes = Base64.decode(encryptedContentBase64, Base64.DEFAULT)
 
         // IV 추출
@@ -129,6 +131,7 @@ object CryptoManager {
         cipher.init(Cipher.DECRYPT_MODE, sessionKey, gcmParameterSpec)
 
         // AAD 설정 (Context Binding)
+        val infoString = "novel-id:$novelId|ts:$timestamp"
         cipher.updateAAD(infoString.toByteArray(StandardCharsets.UTF_8))
 
         val decryptedBytes = cipher.doFinal(ciphertext)

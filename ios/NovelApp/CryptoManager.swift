@@ -16,6 +16,7 @@ class CryptoManager {
     struct EncryptedResponse: Codable {
         let publicKey: String
         let content: String
+        let timestamp: Int64
     }
     
     enum CryptoError: Error {
@@ -23,6 +24,7 @@ class CryptoManager {
         case decryptionFailed
         case keyExchangeFailed
         case signatureFailed
+        case randomGenerationFailed
     }
     
     /// 서버에서 소설 내용을 가져와 복호화합니다.
@@ -43,6 +45,12 @@ class CryptoManager {
         let result = salt.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!)
         }
+        
+        guard result == errSecSuccess else {
+            completion(.failure(CryptoError.randomGenerationFailed))
+            return
+        }
+        
         let saltBase64 = salt.base64EncodedString()
         // -----------------------------
 
@@ -100,8 +108,9 @@ class CryptoManager {
                 let sharedSecret = try clientPrivateKey.sharedSecretFromKeyAgreement(with: serverPublicKey)
                 
                 // 5. AES 세션 키 유도 (HKDF)
-                // Info: "novel-id:{id}|user:test"
-                let infoString = "novel-id:\(novelId)|user:test"
+                // Info: "novel-id:{id}|ts:{timestamp}"
+                // 서버 응답의 timestamp를 사용하여 Info 구성
+                let infoString = "novel-id:\(novelId)|ts:\(json.timestamp)"
                 let infoData = infoString.data(using: .utf8)!
                 
                 let sessionKey = sharedSecret.hkdfDerivedSymmetricKey(

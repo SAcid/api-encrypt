@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:okhttp-sse:4.12.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+    
+    // Test dependencies
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
+}
+
+application {
+    mainClass = 'com.example.client.StreamingApiClient'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

@@ -1,0 +1,4 @@
+rootProject.name = 'novel-api-demo'
+
+include 'backend'
+include 'java-client'

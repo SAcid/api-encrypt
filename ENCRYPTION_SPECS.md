@@ -51,15 +51,16 @@ sequenceDiagram
     alt 인증 실패
         Server-->>Client: 401 Unauthorized
     else 인증 성공
-        Note over Server: 8. ECDH Shared Secret 계산
-        Note over Server: 9. AES Session Key 유도 (HKDF)<br/>Salt: Client Random Salt<br/>Info: "entry-id:{entryId}|ts:{timestamp}"
-        Note over Server: 10. Content 암호화 (AES-GCM + AAD)
+        Note over Server: 8. Server ECDH Key Pair 생성 (Ephemeral)
+        Note over Server: 9. ECDH Shared Secret 계산
+        Note over Server: 10. AES Session Key 유도 (HKDF)<br/>Salt: Client Random Salt<br/>Info: "entry-id:{entryId}|ts:{timestamp}"
+        Note over Server: 11. Content 암호화 (AES-GCM + AAD)
         Server-->>Client: 200 OK<br/>{ publicKey, content }
     end
 
-    Note over Client: 11. ECDH Shared Secret 계산
-    Note over Client: 12. AES Session Key 유도 (HKDF)<br/>(Android: Tink, iOS: CryptoKit, Web: WebCrypto)<br/>Salt & Info 동일 사용
-    Note over Client: 13. Content 복호화 (AAD 검증 포함)
+    Note over Client: 12. ECDH Shared Secret 계산
+    Note over Client: 13. AES Session Key 유도 (HKDF)<br/>Salt & Info 동일 사용
+    Note over Client: 14. Content 복호화 (AAD 검증 포함)
 ```
 
 ## 2. 상세 암호화/복호화 프로세스 (Detailed Cryptographic Process)
@@ -89,6 +90,23 @@ sequenceDiagram
 
 ---
 
+### 클라이언트 → 서버 요청 (HTTP Request)
+
+*   **Method**: `POST`
+*   **Endpoint**: `/api/novels/{entryId}`
+*   **Content-Type**: `application/json`
+*   **Request Body**:
+    ```json
+    {
+      "publicKey": "Base64(Client ECDH Public Key)",
+      "timestamp": 1707600000000,
+      "signature": "Base64(HMAC-SHA256)",
+      "salt": "Base64(Random 32 bytes)"
+    }
+    ```
+
+---
+
 ### 서버 검증 및 암호화 (Server 측 처리)
 
 #### Step 5~7: 요청 검증 (Validation)
@@ -98,12 +116,16 @@ sequenceDiagram
 | 6 | **Signature 검증** | HMAC 재계산 후 `MessageDigest.isEqual()` 비교 (Timing Attack 방지) |
 | 7 | **Replay Guard** | Redis `SETNX`로 동일 (publicKey, timestamp, salt) 조합 재사용 차단 |
 
-#### Step 8: 공유 비밀 계산 (Shared Secret Calculation)
+#### Step 8: 서버 ECDH 키 쌍 생성 (Ephemeral Key Generation)
+*   클라이언트와 동일한 P-256 커브로 **매 요청마다 새로운 임시(Ephemeral) 키 쌍**을 생성합니다.
+*   **Forward Secrecy**: 요청마다 키가 달라져, 하나의 키가 노출되어도 다른 세션에 영향 없음.
+
+#### Step 9: 공유 비밀 계산 (Shared Secret Calculation)
 *   **작업**: ECDH Key Agreement
 *   **실행**: `Server Private Key` + `Client Public Key` → `Shared Secret` (32 bytes)
 *   **특징**: 공유 비밀 자체는 **절대 네트워크로 전송되지 않습니다.**
 
-#### Step 9: 세션 키 유도 (Key Derivation - HKDF)
+#### Step 10: 세션 키 유도 (Key Derivation - HKDF)
 공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function)** 를 통해 안전한 세션 키를 유도합니다.
 *   **Algorithm**: `HKDF-SHA256`
 *   **Salt**: Step 2에서 클라이언트가 생성한 Random 32 bytes
@@ -112,9 +134,9 @@ sequenceDiagram
     *   `{timestamp}`: 클라이언트가 생성한 타임스탬프 (Unix Epoch Milliseconds)
 *   **Output**: 32 bytes (256 bits) → **AES Session Key**
 
-#### Step 10: 콘텐츠 암호화 (Data Encryption - AES-GCM)
+#### Step 11: 콘텐츠 암호화 (Data Encryption - AES-GCM)
 *   **Algorithm**: `AES/GCM/NoPadding`
-*   **Key**: Step 9에서 유도된 `Session Key` (32 bytes)
+*   **Key**: Step 10에서 유도된 `Session Key` (32 bytes)
 *   **IV (Initialization Vector)**: 매 요청마다 생성되는 Random 12 bytes
 *   **Tag Length**: 128 bits
 *   **AAD (Additional Authenticated Data)**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding)
@@ -127,15 +149,15 @@ sequenceDiagram
 
 ### 클라이언트 복호화 (Client 측 응답 처리)
 
-#### Step 11: 공유 비밀 계산
+#### Step 12: 공유 비밀 계산
 *   **실행**: `Client Private Key` + `Server Public Key` → `Shared Secret` (32 bytes)
 *   서버와 **동일한** 공유 비밀이 독립적으로 계산됩니다.
 
-#### Step 12: 세션 키 유도 (HKDF)
-*   Step 9와 **동일한** Salt, Info를 사용하여 같은 Session Key를 유도합니다.
+#### Step 13: 세션 키 유도 (HKDF)
+*   Step 10과 **동일한** Salt, Info를 사용하여 같은 Session Key를 유도합니다.
 
-#### Step 13: 콘텐츠 복호화 (AES-GCM Decryption)
-*   Step 10과 동일한 AAD를 사용하여 복호화 및 무결성 검증을 수행합니다.
+#### Step 14: 콘텐츠 복호화 (AES-GCM Decryption)
+*   Step 11과 동일한 AAD를 사용하여 복호화 및 무결성 검증을 수행합니다.
 *   AAD 불일치 시 복호화 실패 → Context Binding 보장
 
 ## 3. 스트리밍 API (SSE - Server-Sent Events)

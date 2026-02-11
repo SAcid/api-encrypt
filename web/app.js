@@ -107,7 +107,7 @@ async function fetchAndDecrypt() {
 
         // Info: "novel-id:1|ts:{timestamp}" (Context Binding)
         // 서버가 응답에 포함한 타임스탬프를 사용하여 Info 재구성
-        const infoString = "novel-id:1|ts:" + responseData.timestamp;
+        const infoString = "novel-id:1|ts:" + timestamp;
 
         const sessionKey = await window.crypto.subtle.deriveKey(
             {

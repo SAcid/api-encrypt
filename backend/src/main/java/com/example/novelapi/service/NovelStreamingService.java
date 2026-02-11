@@ -48,8 +48,8 @@ public class NovelStreamingService {
 
             // Event 1: init (서버 공개키 전송)
             String initData = String.format(
-                    "{\"publicKey\":\"%s\",\"timestamp\":%d,\"totalChunks\":%d}",
-                    serverPublicKeyBase64, timestamp, chunks.size());
+                    "{\"publicKey\":\"%s\",\"totalChunks\":%d}",
+                    serverPublicKeyBase64, chunks.size());
             emitter.send(SseEmitter.event().name("init").data(initData));
 
             // Event 2..N: chunk (암호화된 텍스트 조각)

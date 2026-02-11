@@ -115,7 +115,7 @@ public class NovelController {
             // 7. 응답 생성 (서버 공개키 + 암호화된 내용 + timestamp)
             String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
 
-            return new NovelResponse(serverPublicKeyBase64, encryptedContent, request.timestamp());
+            return new NovelResponse(serverPublicKeyBase64, encryptedContent);
 
         } catch (Exception e) {
             System.err.println("Encryption processing error: " + e.getClass().getSimpleName());

@@ -85,35 +85,25 @@ object CryptoManager {
         ka.doPhase(serverPublicKey, true)
         val sharedSecret = ka.generateSecret()
 
-        // 3. AES 키 유도 (HKDF)
+        // 3. AES 키 유도 (HKDF - Google Tink)
         val salt = Base64.decode(saltBase64, Base64.DEFAULT)
         // Info: "entry-id:{entryId}|ts:{timestamp}"
         val infoString = "entry-id:$novelId|ts:$timestamp"
         val info = infoString.toByteArray(StandardCharsets.UTF_8)
-        return hkdfSha256(sharedSecret, salt, info)
-    }
-
-    // HKDF-SHA256 구현
-    private fun hkdfSha256(inputKeyingMaterial: ByteArray, salt: ByteArray, info: ByteArray): javax.crypto.SecretKey {
-        // HKDF-Extract
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(salt, "HmacSHA256"))
-        val prk = mac.doFinal(inputKeyingMaterial)
-
-        // HKDF-Expand
-        mac.init(SecretKeySpec(prk, "HmacSHA256"))
-        mac.update(info)
-        mac.update(0x01.toByte()) // Counter
-        val okm = mac.doFinal()
-
-        // 32바이트(256비트) 키 반환
-        val keyBytes = okm.copyOf(32)
+        
+        // Tink Hkdf 사용
+        val keyBytes = com.google.crypto.tink.subtle.Hkdf.computeHkdf("HMACSHA256", sharedSecret, salt, info, 32)
         
         // Zeroize intermediate keys (Security Best Practice)
-        java.util.Arrays.fill(prk, 0.toByte())
-        java.util.Arrays.fill(okm, 0.toByte())
+        // Tink's computeHkdf returns a new byte array. "sharedSecret" should also be zeroized if possible effectively, 
+        // but here we focus on the output keyBytes cleanup after wrapping.
         
-        return SecretKeySpec(keyBytes, "AES")
+        val secretKey = SecretKeySpec(keyBytes, "AES")
+        
+        // Clear the raw key bytes from memory
+        java.util.Arrays.fill(keyBytes, 0.toByte())
+        
+        return secretKey
     }
     /**
      * 콘텐츠 복호화 (AES-GCM)
@@ -140,3 +130,4 @@ object CryptoManager {
         val decryptedBytes = cipher.doFinal(ciphertext)
         return String(decryptedBytes, StandardCharsets.UTF_8)
     }
+}

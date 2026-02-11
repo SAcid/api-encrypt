@@ -64,29 +64,57 @@ sequenceDiagram
 
 ## 2. 상세 암호화/복호화 프로세스 (Detailed Cryptographic Process)
 
-### Step 1: 키 생성 (Key Generation)
+### 클라이언트 준비 (Client → Server 요청 전)
+
+#### Step 1: ECDH 키 쌍 생성 (Key Generation)
 *   **알고리즘**: Elliptic Curve Diffie-Hellman (ECDH)
 *   **Curve**: `secp256r1` (NIST P-256)
 *   **Public Key Format**: X.509 `SubjectPublicKeyInfo` (SPKI)
 *   **Private Key Format**: PKCS#8
 
-### Step 2: 키 교환 (Key Exchange)
-*   **입력**: `My Private Key`, `Peer Public Key`
-*   **출력**: `Shared Secret` (32 bytes)
-*   **설명**: 표준 ECDH 알고리즘을 사용하여 양쪽이 동일한 공유 비밀을 계산합니다.
+#### Step 2: Random Salt 생성
+*   **크기**: 32 bytes
+*   **생성**: `SecureRandom` (Java/Android), `CryptoKit` (iOS), `crypto.getRandomValues()` (Web)
+*   **용도**: HKDF의 Salt 파라미터로 사용 (매 요청마다 고유)
 
-### Step 3: 키 유도 (Key Derivation - HKDF)
+#### Step 3: Timestamp 생성
+*   **값**: `System.currentTimeMillis()` (Unix Epoch Milliseconds)
+*   **용도**: Replay Attack 방지 (서버에서 5분 이내인지 검증), HKDF Info에 포함하여 Context Binding
+
+#### Step 4: 클라이언트 인증 서명 생성 (Client Authentication)
+*   **Algorithm**: `HMAC-SHA256`
+*   **Secret**: `CLIENT_SECRET` ("auth-secret-1234")
+*   **Data to Sign**: `ClientPublicKey(Base64)` + `Timestamp(Long as String)` + `Salt(Base64)`
+*   **출력**: `Signature` (Base64)
+
+---
+
+### 서버 검증 및 암호화 (Server 측 처리)
+
+#### Step 5~7: 요청 검증 (Validation)
+| Step | 검증 항목 | 설명 |
+| :--- | :--- | :--- |
+| 5 | **Timestamp 검증** | `현재시간 - timestamp < 5분` (Replay Attack 방지) |
+| 6 | **Signature 검증** | HMAC 재계산 후 `MessageDigest.isEqual()` 비교 (Timing Attack 방지) |
+| 7 | **Replay Guard** | Redis `SETNX`로 동일 (publicKey, timestamp, salt) 조합 재사용 차단 |
+
+#### Step 8: 공유 비밀 계산 (Shared Secret Calculation)
+*   **작업**: ECDH Key Agreement
+*   **실행**: `Server Private Key` + `Client Public Key` → `Shared Secret` (32 bytes)
+*   **특징**: 공유 비밀 자체는 **절대 네트워크로 전송되지 않습니다.**
+
+#### Step 9: 세션 키 유도 (Key Derivation - HKDF)
 공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function)** 를 통해 안전한 세션 키를 유도합니다.
 *   **Algorithm**: `HKDF-SHA256`
-*   **Salt**: Client가 생성한 Random 32 bytes (`salt` param)
+*   **Salt**: Step 2에서 클라이언트가 생성한 Random 32 bytes
 *   **Info**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding, UTF-8 bytes)
     *   `{entryId}`: 요청된 소설 챕터 ID
     *   `{timestamp}`: 클라이언트가 생성한 타임스탬프 (Unix Epoch Milliseconds)
-*   **Output**: 32 bytes (256 bits) -> **AES Session Key**
+*   **Output**: 32 bytes (256 bits) → **AES Session Key**
 
-### Step 4: 데이터 암호화 (Data Encryption - AES-GCM)
+#### Step 10: 콘텐츠 암호화 (Data Encryption - AES-GCM)
 *   **Algorithm**: `AES/GCM/NoPadding`
-*   **Key**: Step 3에서 유도된 `Session Key` (32 bytes)
+*   **Key**: Step 9에서 유도된 `Session Key` (32 bytes)
 *   **IV (Initialization Vector)**: 매 요청마다 생성되는 Random 12 bytes
 *   **Tag Length**: 128 bits
 *   **AAD (Additional Authenticated Data)**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding)
@@ -95,12 +123,20 @@ sequenceDiagram
     *   앞 12바이트: IV
     *   나머지: 암호문 + 인증 태그(Tag는 자동으로 붙음)
 
-### Step 5: 클라이언트 인증 (Client Authentication & Integrity)
-*   **Algorithm**: `HMAC-SHA256`
-*   **Secret**: `CLIENT_SECRET` ("auth-secret-1234")
-*   **Data to Sign**: `ClientPublicKey(Base64)` + `Timestamp(Long as String)` + `Salt(Base64)`
-*   **Verification**: 키 교환 전에 서명을 검증하여 허가된 클라이언트인지 확인하며, Salt의 무결성을 보장함.
-*   **Timing Attack 방지**: `MessageDigest.isEqual()` 사용 (Constant-time comparison)
+---
+
+### 클라이언트 복호화 (Client 측 응답 처리)
+
+#### Step 11: 공유 비밀 계산
+*   **실행**: `Client Private Key` + `Server Public Key` → `Shared Secret` (32 bytes)
+*   서버와 **동일한** 공유 비밀이 독립적으로 계산됩니다.
+
+#### Step 12: 세션 키 유도 (HKDF)
+*   Step 9와 **동일한** Salt, Info를 사용하여 같은 Session Key를 유도합니다.
+
+#### Step 13: 콘텐츠 복호화 (AES-GCM Decryption)
+*   Step 10과 동일한 AAD를 사용하여 복호화 및 무결성 검증을 수행합니다.
+*   AAD 불일치 시 복호화 실패 → Context Binding 보장
 
 ## 3. 스트리밍 API (SSE - Server-Sent Events)
 

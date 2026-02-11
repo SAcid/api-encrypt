@@ -32,6 +32,7 @@
     *   응답: `{ publicKey, content }`
 
 ### 흐름도 (Sequence Diagram)
+```mermaid
 sequenceDiagram
     participant Client
     participant Server

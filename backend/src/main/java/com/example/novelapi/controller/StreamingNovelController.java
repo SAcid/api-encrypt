@@ -6,7 +6,9 @@ import com.example.novelapi.service.NovelStreamingService;
 import com.example.novelapi.service.ReplayGuardService;
 import com.example.novelapi.util.CryptoUtil;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.crypto.SecretKey;
@@ -61,7 +63,7 @@ public class StreamingNovelController {
         // 1. 타임스탬프 검증
         long currentTime = System.currentTimeMillis();
         if (Math.abs(currentTime - request.timestamp()) > TIMESTAMP_LIMIT_MS) {
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // 2. HMAC 서명 검증
@@ -72,17 +74,17 @@ public class StreamingNovelController {
             if (!java.security.MessageDigest.isEqual(
                     expectedSignature.getBytes(StandardCharsets.UTF_8),
                     request.signature().getBytes(StandardCharsets.UTF_8))) {
-                throw new RuntimeException("Unauthorized");
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
             }
-        } catch (RuntimeException e) {
+        } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // 3. Replay Attack 방어
         if (!replayGuardService.checkAndMark(request.publicKey(), request.timestamp(), request.salt())) {
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // === 키 교환 및 세션 키 유도 ===
@@ -102,7 +104,7 @@ public class StreamingNovelController {
             sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);
             serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
         } catch (Exception e) {
-            throw new RuntimeException("Encryption setup failed");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Encryption setup failed");
         }
 
         // === SSE 스트리밍 ===

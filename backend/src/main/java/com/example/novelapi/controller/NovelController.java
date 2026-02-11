@@ -5,7 +5,9 @@ import com.example.novelapi.dto.NovelResponse;
 import com.example.novelapi.service.ReplayGuardService;
 import com.example.novelapi.util.CryptoUtil;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -48,7 +50,7 @@ public class NovelController {
         // 요청 시간이 현재 시간보다 5분 이상 차이가 나면 거부
         if (Math.abs(currentTime - request.timestamp()) > TIMESTAMP_LIMIT_MS) {
             System.err.println("Timestamp validation failed");
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // 2. 서명(Signature) 검증 (HMAC-SHA256)
@@ -64,19 +66,19 @@ public class NovelController {
                     request.signature().getBytes(StandardCharsets.UTF_8))) {
                 // 민감 정보(expected 값) 노출 방지: 불일치 사실만 기록
                 System.err.println("Signature verification failed for request timestamp=" + request.timestamp());
-                throw new RuntimeException("Unauthorized");
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
             }
-        } catch (RuntimeException e) {
+        } catch (ResponseStatusException e) {
             throw e; // Unauthorized 예외는 그대로 전파
         } catch (Exception e) {
             System.err.println("Signature verification error: " + e.getClass().getSimpleName());
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // 3. Replay Attack 방어 (Redis Nonce 검증)
         if (!replayGuardService.checkAndMark(request.publicKey(), request.timestamp(), request.salt())) {
             System.err.println("Replay attack detected for request timestamp=" + request.timestamp());
-            throw new RuntimeException("Unauthorized");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
         // 원본 소설 내용
@@ -91,35 +93,35 @@ public class NovelController {
                 """;
 
         try {
-            // 3. 서버의 임시(Ephemeral) ECDH 키 쌍 생성
+            // 4. 서버의 임시(Ephemeral) ECDH 키 쌍 생성
             KeyPair serverKeyPair = CryptoUtil.generateKeyPair();
 
-            // 4. 공유 비밀(Shared Secret) 계산 (Server Private Key + Client Public Key)
+            // 5. 공유 비밀(Shared Secret) 계산 (Server Private Key + Client Public Key)
             byte[] sharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), request.publicKey());
 
-            // 5. AES 세션 키 유도 (HKDF 사용)
-            // 5-1. Salt 추출 (Client Nonce)
+            // 6. AES 세션 키 유도 (HKDF 사용)
+            // 6-1. Salt 추출 (Client Nonce)
             byte[] salt = Base64.getDecoder().decode(request.salt());
 
-            // 5-2. Info 생성 (Context Binding: novel-id + timestamp)
+            // 6-2. Info 생성 (Context Binding: novel-id + timestamp)
             // 클라이언트가 보낸 timestamp를 사용하여 요청별 고유 컨텍스트 생성
             String infoString = "novel-id:" + id + "|ts:" + request.timestamp();
             byte[] info = infoString.getBytes(StandardCharsets.UTF_8);
 
             SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);
 
-            // 6. 세션 키로 내용 암호화 (AES-GCM)
+            // 7. 세션 키로 내용 암호화 (AES-GCM)
             // AAD로 Context Info를 사용하여 암호문에 컨텍스트 바인딩 (Context Binding)
             String encryptedContent = CryptoUtil.encrypt(originalContent, sessionKey, info);
 
-            // 7. 응답 생성 (서버 공개키 + 암호화된 내용 + timestamp)
+            // 8. 응답 생성 (서버 공개키 + 암호화된 내용)
             String serverPublicKeyBase64 = Base64.getEncoder().encodeToString(serverKeyPair.getPublic().getEncoded());
 
             return new NovelResponse(serverPublicKeyBase64, encryptedContent);
 
         } catch (Exception e) {
             System.err.println("Encryption processing error: " + e.getClass().getSimpleName());
-            throw new RuntimeException("Encryption failed");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Encryption failed");
         }
     }
 }

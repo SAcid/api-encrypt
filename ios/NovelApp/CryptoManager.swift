@@ -33,7 +33,10 @@ class CryptoManager {
         let clientPrivateKey = P256.KeyAgreement.PrivateKey()
         let clientPublicKey = clientPrivateKey.publicKey
         
-        guard let clientPublicKeyDER = try? clientPublicKey.derRepresentation else {
+        let clientPublicKeyDER: Data
+        do {
+            clientPublicKeyDER = try clientPublicKey.derRepresentation
+        } catch {
             completion(.failure(CryptoError.keyExchangeFailed))
             return
         }

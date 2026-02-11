@@ -9,8 +9,8 @@ import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
+import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.UUID;
 
 /**
  * 단일 REST API (/api/novels/{id}) 호출 예제
@@ -40,7 +40,9 @@ public class RestApiClient {
 
         // 2. 인증 데이터 생성
         long timestamp = System.currentTimeMillis();
-        String salt = Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes());
+        byte[] saltBytes = new byte[32];
+        new SecureRandom().nextBytes(saltBytes);
+        String salt = Base64.getEncoder().encodeToString(saltBytes);
         String dataToSign = clientPublicKey + timestamp + salt;
         String signature = CryptoUtil.generateHmacSignature(dataToSign, CLIENT_SECRET);
 
@@ -72,14 +74,14 @@ public class RestApiClient {
 
             // 5. 키 유도 (ECDH + HKDF)
             byte[] sharedSecret = CryptoUtil.computeSharedSecret(clientKeyPair.getPrivate(), serverPublicKey);
-            byte[] saltBytes = Base64.getDecoder().decode(salt);
+            byte[] decodedSalt = Base64.getDecoder().decode(salt);
 
             // Context Binding (novel-id:1|ts:{timestamp})
             String novelId = "1";
             String infoString = "novel-id:" + novelId + "|ts:" + timestamp;
             byte[] infoBytes = infoString.getBytes(StandardCharsets.UTF_8);
 
-            SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, saltBytes, infoBytes);
+            SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, decodedSalt, infoBytes);
 
             // 6. 복호화
             // AAD (Context Binding)

@@ -105,9 +105,11 @@ async function fetchAndDecrypt() {
             ["deriveKey"]
         );
 
-        // Info: "entry-id:1|ts:{timestamp}" (Context Binding)
+        // Info: "entry-id:{entryId}|ts:{timestamp}" (Context Binding)
         // 서버가 응답에 포함한 타임스탬프를 사용하여 Info 재구성
-        const infoString = "entry-id:1|ts:" + timestamp;
+        // API_URL에서 ID 추출 (예: .../novels/1 -> 1)
+        const novelId = API_URL.split('/').pop();
+        const infoString = "entry-id:" + novelId + "|ts:" + timestamp;
 
         const sessionKey = await window.crypto.subtle.deriveKey(
             {

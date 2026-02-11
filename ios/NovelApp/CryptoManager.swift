@@ -59,7 +59,10 @@ class CryptoManager {
         // --- HMAC 서명 생성 ---
         // 현재 시간(Timestamp) + 공개키 + Salt를 조합하여 서명
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
-        let dataToSign = "\(clientPublicKeyBase64)\(timestamp)\(saltBase64)".data(using: .utf8)!
+        guard let dataToSign = "\(clientPublicKeyBase64)\(timestamp)\(saltBase64)".data(using: .utf8) else {
+            completion(.failure(CryptoError.keyExchangeFailed))
+            return
+        }
         
         let symmetricKey = SymmetricKey(data: clientSecret)
         let signature = HMAC<SHA256>.authenticationCode(for: dataToSign, using: symmetricKey)
@@ -78,7 +81,13 @@ class CryptoManager {
             "signature": signatureBase64,
             "salt": saltBase64 // Dynamic Salt 전송
         ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+             completion(.failure(error))
+             return
+        }
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {

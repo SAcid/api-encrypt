@@ -28,10 +28,8 @@ object CryptoManager {
     // private val HKDF_SALT = ... (Dynamic Salt 사용)
     // private val HKDF_INFO = ... (Dynamic Info 사용)
 
-    interface DecryptCallback {
-        fun onSuccess(content: String)
-        fun onError(e: Exception)
-    }
+    // Callback interface removed as functions are synchronous/blocking
+
     
     /**
      * 인증 서명 생성 (HMAC-SHA256)
@@ -110,6 +108,11 @@ object CryptoManager {
 
         // 32바이트(256비트) 키 반환
         val keyBytes = okm.copyOf(32)
+        
+        // Zeroize intermediate keys (Security Best Practice)
+        java.util.Arrays.fill(prk, 0.toByte())
+        java.util.Arrays.fill(okm, 0.toByte())
+        
         return SecretKeySpec(keyBytes, "AES")
     }
     /**

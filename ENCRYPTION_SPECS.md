@@ -70,7 +70,8 @@ sequenceDiagram
 #### Step 1: ECDH 키 쌍 생성 (Key Generation)
 *   **알고리즘**: Elliptic Curve Diffie-Hellman (ECDH)
 *   **Curve**: `secp256r1` (NIST P-256)
-*   **Public Key Format**: X.509 `SubjectPublicKeyInfo` (SPKI)
+*   **Public Key Format**: X.509 `SubjectPublicKeyInfo` (SPKI, DER 인코딩, 91 bytes)
+    *   **iOS (CryptoKit)**: `derRepresentation` 프로퍼티가 SPKI(91 bytes)를 반환함을 확인. `x963Representation`(65 bytes)이나 `rawRepresentation`(64 bytes)과는 다른 포맷.
 *   **Private Key Format**: PKCS#8
 
 #### Step 2: Random Salt 생성
@@ -112,9 +113,9 @@ sequenceDiagram
 #### Step 5~7: 요청 검증 (Validation)
 | Step | 검증 항목 | 설명 |
 | :--- | :--- | :--- |
-| 5 | **Timestamp 검증** | `현재시간 - timestamp < 5분` (Replay Attack 방지) |
+| 5 | **Timestamp 검증** | `|현재시간 - timestamp| < 5분` (절대값 비교, 미래 시간도 차단) |
 | 6 | **Signature 검증** | HMAC 재계산 후 `MessageDigest.isEqual()` 비교 (Timing Attack 방지) |
-| 7 | **Replay Guard** | Redis `SETNX`로 동일 (publicKey, timestamp, salt) 조합 재사용 차단 |
+| 7 | **Replay Guard** | Nonce(`publicKey + timestamp + salt`)를 **SHA-256 해시** 후 Redis `SETNX`로 재사용 차단 (TTL: 5분) |
 
 #### Step 8: 서버 ECDH 키 쌍 생성 (Ephemeral Key Generation)
 *   클라이언트와 동일한 P-256 커브로 **매 요청마다 새로운 임시(Ephemeral) 키 쌍**을 생성합니다.
@@ -126,13 +127,16 @@ sequenceDiagram
 *   **특징**: 공유 비밀 자체는 **절대 네트워크로 전송되지 않습니다.**
 
 #### Step 10: 세션 키 유도 (Key Derivation - HKDF)
-공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function)** 를 통해 안전한 세션 키를 유도합니다.
-*   **Algorithm**: `HKDF-SHA256`
+공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function, [RFC 5869](https://tools.ietf.org/html/rfc5869))** 를 통해 안전한 세션 키를 유도합니다.
+*   **Algorithm**: `HKDF-SHA256` (Extract-then-Expand)
+    *   **Extract**: `PRK = HMAC-SHA256(Salt, Shared Secret)`
+    *   **Expand**: `OKM = HMAC-SHA256(PRK, Info || 0x01)` → 앞 32 bytes 사용
 *   **Salt**: Step 2에서 클라이언트가 생성한 Random 32 bytes
 *   **Info**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding, UTF-8 bytes)
     *   `{entryId}`: 요청된 소설 챕터 ID
     *   `{timestamp}`: 클라이언트가 생성한 타임스탬프 (Unix Epoch Milliseconds)
 *   **Output**: 32 bytes (256 bits) → **AES Session Key**
+*   **플랫폼별 구현체**: Backend(수동 구현), Android(Google Tink), Web(Web Crypto API), Wasm(hkdf crate), iOS(CryptoKit HKDF)
 
 #### Step 11: 콘텐츠 암호화 (Data Encryption - AES-GCM)
 *   **Algorithm**: `AES/GCM/NoPadding`
@@ -164,7 +168,7 @@ sequenceDiagram
 
 대용량 콘텐츠를 Chunk 단위로 암호화하여 실시간 스트리밍합니다.
 
-*   **Endpoint**: `POST /api/novels/{id}/stream?chunkSize=100`
+*   **Endpoint**: `POST /api/novels/{entryId}/stream?chunkSize=100`
 *   **인증**: REST API와 동일 (HMAC + Timestamp + Replay Guard)
 *   **이벤트 흐름**:
     1.  `init` — `{ publicKey, totalChunks }` (서버 공개키 + 총 청크 수)

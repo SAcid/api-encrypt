@@ -18,7 +18,7 @@
 *   **목적**: **데이터 기밀성 (Confidentiality)**.
 *   **역할**: 실제 소설 내용(Content)을 암호화하여 인가된 사용자(키를 가진 자)만 읽을 수 있게 합니다.
 *   **방어 위협**: **정보 유출**. DB가 털리거나 전송 구간이 노출되어도 원본 내용을 알 수 없습니다.
-*   **AAD (Additional Authenticated Data)**: `"novel-id:{id}|ts:{timestamp}"` 을 AAD로 사용하여 암호문에 컨텍스트를 바인딩합니다. 다른 요청의 암호문을 재사용하거나 대체하는 것을 방지합니다.
+*   **AAD (Additional Authenticated Data)**: `"entry-id:{entryId}|ts:{timestamp}"` 을 AAD로 사용하여 암호문에 컨텍스트를 바인딩합니다. 다른 요청의 암호문을 재사용하거나 대체하는 것을 방지합니다.
 
 ---
 
@@ -87,7 +87,7 @@
 
 ### 현재 구현
 *   **Salt**: 클라이언트가 매 요청마다 `SecureRandom`으로 생성한 **32바이트 난수** (Dynamic Salt)를 사용합니다. HMAC 서명에 포함되어 무결성이 보장됩니다.
-*   **Info**: `"novel-id:{id}|ts:{timestamp}"` 형식의 **동적 컨텍스트 문자열**을 사용합니다. 이 값은 AES-GCM의 AAD로도 동시에 사용됩니다.
+*   **Info**: `"entry-id:{entryId}|ts:{timestamp}"` 형식의 **동적 컨텍스트 문자열**을 사용합니다. 이 값은 AES-GCM의 AAD로도 동시에 사용됩니다.
 *   **결론**: Salt는 매 요청마다 새로 생성되므로 Rainbow Table 공격이 불가능하며, Info에 소설 ID와 타임스탬프가 포함되어 키의 용도가 수학적으로 격리됩니다.
 
 ### 보안 특성

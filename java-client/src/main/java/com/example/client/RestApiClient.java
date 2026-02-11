@@ -13,7 +13,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * 단일 REST API (/api/novels/{id}) 호출 예제
+ * 단일 REST API (/api/novels/{entryId}) 호출 예제
  */
 public class RestApiClient {
     private static final String SERVER_URL = "http://localhost:8080/api/novels/1";
@@ -76,9 +76,9 @@ public class RestApiClient {
             byte[] sharedSecret = CryptoUtil.computeSharedSecret(clientKeyPair.getPrivate(), serverPublicKey);
             byte[] decodedSalt = Base64.getDecoder().decode(salt);
 
-            // Context Binding (novel-id:1|ts:{timestamp})
+            // Context Binding (entry-id:1|ts:{timestamp})
             String novelId = "1";
-            String infoString = "novel-id:" + novelId + "|ts:" + timestamp;
+            String infoString = "entry-id:" + novelId + "|ts:" + timestamp;
             byte[] infoBytes = infoString.getBytes(StandardCharsets.UTF_8);
 
             SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, decodedSalt, infoBytes);

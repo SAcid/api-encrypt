@@ -110,9 +110,9 @@ class CryptoManager {
                 let sharedSecret = try clientPrivateKey.sharedSecretFromKeyAgreement(with: serverPublicKey)
                 
                 // 5. AES 세션 키 유도 (HKDF)
-                // Info: "novel-id:{id}|ts:{timestamp}"
+                // Info: "entry-id:{entryId}|ts:{timestamp}"
                 // 서버 응답의 timestamp를 사용하여 Info 구성
-                let infoString = "novel-id:\(novelId)|ts:\(timestamp)"
+                let infoString = "entry-id:\(novelId)|ts:\(timestamp)"
                 let infoData = infoString.data(using: .utf8)!
                 
                 let sessionKey = sharedSecret.hkdfDerivedSymmetricKey(

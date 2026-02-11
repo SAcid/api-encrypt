@@ -39,12 +39,12 @@ public class NovelController {
     /**
      * 소설 내용 조회 API (암호화 + 인증)
      * 
-     * @param id      소설 챕터 ID
+     * @param entryId 소설 챕터 ID
      * @param request 클라이언트의 공개키, 타임스탬프, 서명이 포함된 요청
      * @return 서버 공개키와 암호화된 소설 내용
      */
-    @PostMapping("/{id}")
-    public NovelResponse getNovel(@PathVariable String id, @RequestBody KeyExchangeRequest request) {
+    @PostMapping("/{entryId}")
+    public NovelResponse getNovel(@PathVariable String entryId, @RequestBody KeyExchangeRequest request) {
         // 1. 타임스탬프 검증 (Replay Attack 방지)
         long currentTime = System.currentTimeMillis();
         // 요청 시간이 현재 시간보다 5분 이상 차이가 나면 거부
@@ -103,9 +103,9 @@ public class NovelController {
             // 6-1. Salt 추출 (Client Nonce)
             byte[] salt = Base64.getDecoder().decode(request.salt());
 
-            // 6-2. Info 생성 (Context Binding: novel-id + timestamp)
+            // 6-2. Info 생성 (Context Binding: entry-id + timestamp)
             // 클라이언트가 보낸 timestamp를 사용하여 요청별 고유 컨텍스트 생성
-            String infoString = "novel-id:" + id + "|ts:" + request.timestamp();
+            String infoString = "entry-id:" + entryId + "|ts:" + request.timestamp();
             byte[] info = infoString.getBytes(StandardCharsets.UTF_8);
 
             SecretKey sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);

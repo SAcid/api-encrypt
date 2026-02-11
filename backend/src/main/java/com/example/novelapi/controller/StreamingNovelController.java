@@ -47,14 +47,14 @@ public class StreamingNovelController {
     /**
      * 스트리밍 소설 조회 API
      *
-     * @param id        소설 챕터 ID
+     * @param entryId   소설 챕터 ID
      * @param chunkSize chunk당 문자 수 (코드포인트 기준, 기본 100)
      * @param request   클라이언트 키 교환 요청
      * @return SseEmitter (SSE 스트림)
      */
-    @PostMapping("/{id}/stream")
+    @PostMapping("/{entryId}/stream")
     public SseEmitter streamNovel(
-            @PathVariable String id,
+            @PathVariable String entryId,
             @RequestParam(defaultValue = "100") int chunkSize,
             @RequestBody KeyExchangeRequest request) {
 
@@ -98,7 +98,7 @@ public class StreamingNovelController {
             byte[] sharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), request.publicKey());
             byte[] salt = Base64.getDecoder().decode(request.salt());
 
-            infoString = "novel-id:" + id + "|ts:" + request.timestamp();
+            infoString = "entry-id:" + entryId + "|ts:" + request.timestamp();
             byte[] info = infoString.getBytes(StandardCharsets.UTF_8);
 
             sessionKey = CryptoUtil.deriveKey(sharedSecret, salt, info);

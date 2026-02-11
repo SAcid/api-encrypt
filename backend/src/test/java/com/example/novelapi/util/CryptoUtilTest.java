@@ -18,7 +18,7 @@ class CryptoUtilTest {
         String clientPublicKeyBase64 = Base64.getEncoder().encodeToString(clientKeyPair.getPublic().getEncoded());
 
         byte[] salt = new byte[32]; // Dummy Salt
-        byte[] info = "novel-id:test|user:test".getBytes(StandardCharsets.UTF_8); // Dummy Info
+        byte[] info = "entry-id:test|user:test".getBytes(StandardCharsets.UTF_8); // Dummy Info
 
         KeyPair serverKeyPair = CryptoUtil.generateKeyPair();
         byte[] serverSharedSecret = CryptoUtil.computeSharedSecret(serverKeyPair.getPrivate(), clientPublicKeyBase64);

@@ -89,8 +89,8 @@ object CryptoManager {
 
         // 3. AES 키 유도 (HKDF)
         val salt = Base64.decode(saltBase64, Base64.DEFAULT)
-        // Info: "novel-id:{id}|ts:{timestamp}"
-        val infoString = "novel-id:$novelId|ts:$timestamp"
+        // Info: "entry-id:{entryId}|ts:{timestamp}"
+        val infoString = "entry-id:$novelId|ts:$timestamp"
         val info = infoString.toByteArray(StandardCharsets.UTF_8)
         return hkdfSha256(sharedSecret, salt, info)
     }
@@ -131,7 +131,7 @@ object CryptoManager {
         cipher.init(Cipher.DECRYPT_MODE, sessionKey, gcmParameterSpec)
 
         // AAD 설정 (Context Binding)
-        val infoString = "novel-id:$novelId|ts:$timestamp"
+        val infoString = "entry-id:$novelId|ts:$timestamp"
         cipher.updateAAD(infoString.toByteArray(StandardCharsets.UTF_8))
 
         val decryptedBytes = cipher.doFinal(ciphertext)

@@ -3,6 +3,19 @@
 ## 프로토콜 개요
 **ECDH (P-256)** 키 교환에 **HMAC-SHA256 서명**을 추가하여 클라이언트 인증을 수행합니다.
 
+### POST를 사용하는 이유 (Why POST instead of GET?)
+콘텐츠를 "조회"하는 API이지만, **GET이 아닌 POST**를 사용합니다. 이는 REST 의미론보다 **보안**을 우선한 설계입니다.
+
+| 항목 | GET (Query Parameter) | POST (Request Body) |
+| :--- | :--- | :--- |
+| **민감 정보 노출** | ⚠️ URL에 공개키·서명이 포함되어 서버 로그, 브라우저 히스토리, CDN 로그, Referer 헤더에 기록됨 | ✅ Body는 로그에 기록되지 않음 |
+| **URL 길이 제한** | ⚠️ ECDH 공개키(~180자) + 서명 + Salt로 URL이 수백 자 이상이 됨. 일부 프록시/CDN에서 잘릴 수 있음 | ✅ Body 크기 제한 없음 |
+| **URL 인코딩** | ⚠️ Base64의 `+`, `/`, `=` 문자가 URL 인코딩 필요 (`%2B`, `%2F`, `%3D`). 인코딩/디코딩 오류 위험 | ✅ JSON으로 전송하므로 인코딩 이슈 없음 |
+| **캐싱** | ⚠️ 브라우저/CDN이 자동 캐싱할 수 있음. 매번 새로운 ECDH 키 쌍이 필요한 구조와 충돌 | ✅ 캐싱되지 않음 |
+| **북마크/공유** | ⚠️ 인증 정보가 포함된 URL이 북마크·공유될 위험 | ✅ 불가능 |
+
+> **핵심**: 이 API는 단순 조회가 아니라 **ECDH 키 교환 + HMAC 인증 + 암호화**를 동시에 수행하는 **보안 프로토콜 엔드포인트**이므로, POST가 적합합니다.
+
 ### 1. 키 교환 핸드셰이크 (Key Exchange Handshake)
 1.  **Client (클라이언트)**:
     *   ECDH 키 쌍 생성 (`Client Public Key`).
@@ -39,7 +52,7 @@ sequenceDiagram
         Server-->>Client: 401 Unauthorized
     else 인증 성공
         Note over Server: 8. ECDH Shared Secret 계산
-        Note over Server: 9. AES Session Key 유도 (HKDF)<br/>Salt: Client Random Salt<br/>Info: "novel-id:{id}|ts:{timestamp}"
+        Note over Server: 9. AES Session Key 유도 (HKDF)<br/>Salt: Client Random Salt<br/>Info: "entry-id:{entryId}|ts:{timestamp}"
         Note over Server: 10. Content 암호화 (AES-GCM + AAD)
         Server-->>Client: 200 OK<br/>{ publicKey, content }
     end
@@ -66,8 +79,8 @@ sequenceDiagram
 공유 비밀을 그대로 암호화 키로 사용하지 않고, **HKDF (HMAC-based Key Derivation Function)** 를 통해 안전한 세션 키를 유도합니다.
 *   **Algorithm**: `HKDF-SHA256`
 *   **Salt**: Client가 생성한 Random 32 bytes (`salt` param)
-*   **Info**: `"novel-id:{id}|ts:{timestamp}"` (Context Binding, UTF-8 bytes)
-    *   `{id}`: 요청된 소설 챕터 ID
+*   **Info**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding, UTF-8 bytes)
+    *   `{entryId}`: 요청된 소설 챕터 ID
     *   `{timestamp}`: 클라이언트가 생성한 타임스탬프 (Unix Epoch Milliseconds)
 *   **Output**: 32 bytes (256 bits) -> **AES Session Key**
 
@@ -76,7 +89,7 @@ sequenceDiagram
 *   **Key**: Step 3에서 유도된 `Session Key` (32 bytes)
 *   **IV (Initialization Vector)**: 매 요청마다 생성되는 Random 12 bytes
 *   **Tag Length**: 128 bits
-*   **AAD (Additional Authenticated Data)**: `"novel-id:{id}|ts:{timestamp}"` (Context Binding)
+*   **AAD (Additional Authenticated Data)**: `"entry-id:{entryId}|ts:{timestamp}"` (Context Binding)
     *   Info 문자열과 동일한 값을 AAD로 사용하여 암호문에 컨텍스트를 바인딩합니다.
 *   **출력 포맷**: `Base64(IV + Ciphertext + Tag)`
     *   앞 12바이트: IV

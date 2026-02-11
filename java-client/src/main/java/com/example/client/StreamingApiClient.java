@@ -18,7 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * SSE 스트리밍 API (/api/novels/{id}/stream) 호출 예제
+ * SSE 스트리밍 API (/api/novels/{entryId}/stream) 호출 예제
  */
 public class StreamingApiClient {
     private static final String SERVER_URL = "http://localhost:8080/api/novels/1/stream";
@@ -136,7 +136,7 @@ public class StreamingApiClient {
             byte[] saltBytes = Base64.getDecoder().decode(saltBase64);
 
             String novelId = "1";
-            String infoString = "novel-id:" + novelId + "|ts:" + timestamp;
+            String infoString = "entry-id:" + novelId + "|ts:" + timestamp;
             byte[] infoBytes = infoString.getBytes(StandardCharsets.UTF_8);
 
             sessionKey = CryptoUtil.deriveKey(sharedSecret, saltBytes, infoBytes);

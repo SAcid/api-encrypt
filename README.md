@@ -9,7 +9,7 @@
 - **클라이언트 인증**: 타임스탬프와 솔트(Salt)가 포함된 HMAC-SHA256 서명을 사용하여 클라이언트를 검증하고 재전송 공격을 방지합니다.
 - **Replay Attack 방어**: Redis 기반 Nonce 검증으로 동일 요청의 재사용을 방지합니다.
 - **SSE 스트리밍**: 대용량 콘텐츠를 Chunk 단위로 암호화하여 실시간 스트리밍합니다.
-- **컨텍스트 바인딩**: HKDF Info와 AES-GCM AAD에 `novel-id`와 `timestamp`를 포함하여 암호문의 용도를 격리합니다.
+- **컨텍스트 바인딩**: HKDF Info와 AES-GCM AAD에 `entry-id`와 `timestamp`를 포함하여 암호문의 용도를 격리합니다.
 - **크로스 플랫폼**: 다음 플랫폼에 대한 참조 구현을 포함합니다:
   - **백엔드**: Spring Boot 3.5 (Java 21)
   - **웹**: Web Crypto API를 사용하는 Vanilla JS
@@ -53,7 +53,7 @@ api-encrypt/
     - **Replay Attack 방어**: Redis SETNX로 동일 요청의 재사용을 차단합니다.
 3.  **키 유도**:
     - ECDH를 통해 `공유 비밀(Shared Secret)`을 계산합니다.
-    - 클라이언트가 보낸 `Salt`와 `"novel-id:{id}|ts:{timestamp}"` Info를 사용하여 **HKDF-SHA256**으로 `세션 키(Session Key)`를 유도합니다.
+    - 클라이언트가 보낸 `Salt`와 `"entry-id:{entryId}|ts:{timestamp}"` Info를 사용하여 **HKDF-SHA256**으로 `세션 키(Session Key)`를 유도합니다.
 4.  **콘텐츠 전송**: 서버는 서버의 공개 키와 암호화된 콘텐츠(AES-256-GCM + AAD)를 응답합니다.
     - 응답: `{ publicKey, content }`
 

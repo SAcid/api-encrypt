@@ -113,7 +113,7 @@ impl CryptoManager {
         shared_secret_vec.zeroize();
 
         let timestamp_u64 = timestamp as u64;
-        let info_string = format!("novel-id:{}|ts:{}", novel_id, timestamp_u64);
+        let info_string = format!("entry-id:{}|ts:{}", novel_id, timestamp_u64);
         let info_bytes = info_string.as_bytes().to_vec();
 
         let mut okm = [0u8; 32];

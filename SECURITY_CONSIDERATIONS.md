@@ -12,11 +12,13 @@
 *   **목적**: **데이터 무결성 및 인증 (Integrity & Authentication)**.
 *   **역할**: 메시지가 변조되지 않았음(무결성)과, 올바른 키를 가진 송신자가 보냈음(인증)을 검증합니다.
 *   **방어 위협**: **중간자 공격 (MITM) 및 데이터 변조**. 공격자가 패킷을 가로채 내용을 바꾸거나, 가짜 클라이언트 흉내를 내는 것을 방지합니다.
+*   **Timing Attack 방지**: 서명 비교 시 `MessageDigest.isEqual()`을 사용하여 상수 시간 비교를 수행합니다.
 
 ### 3) AES-256-GCM (Advanced Encryption Standard - Galois/Counter Mode)
 *   **목적**: **데이터 기밀성 (Confidentiality)**.
 *   **역할**: 실제 소설 내용(Content)을 암호화하여 인가된 사용자(키를 가진 자)만 읽을 수 있게 합니다.
 *   **방어 위협**: **정보 유출**. DB가 털리거나 전송 구간이 노출되어도 원본 내용을 알 수 없습니다.
+*   **AAD (Additional Authenticated Data)**: `"novel-id:{id}|ts:{timestamp}"` 을 AAD로 사용하여 암호문에 컨텍스트를 바인딩합니다. 다른 요청의 암호문을 재사용하거나 대체하는 것을 방지합니다.
 
 ---
 
@@ -62,6 +64,7 @@
 ## 4. 코드 난독화 (Code Obfuscation)
 *   **Android**: **R8 / ProGuard**를 적용하여 불필요한 메타데이터 제거 및 클래스/메서드 이름을 난수화합니다.
 *   **iOS**: **SwiftShield** 등 난독화 도구를 사용하거나, 중요 로직(Key Exchange 등)을 C/C++로 작성하여 LLVM IR 단계에서 난독화합니다.
+*   **WASM (Rust)**: Rust를 WebAssembly로 컴파일하면 바이너리(.wasm) 형태이므로 역공학 난이도가 높습니다. 추가로 `wasm-opt` 최적화를 적용하면 분석이 더욱 어려워집니다.
 
 ## 5. 성능 비교 분석 (Performance Analysis)
 
@@ -81,23 +84,16 @@
     *   **Forward Secrecy (전방 향성)**: 매 세션마다 새로운 키를 사용하므로, 나중에 서버 키가 유출되어도 과거의 통신 내용을 복호화할 수 없습니다.
 
 ## 6. HKDF 파라미터 (Salt & Info) 보안
-코드에 포함된 `HKDF_SALT` ("novel-api-salt")와 `HKDF_INFO` ("aes-gcm-key")는 **비밀(Secret)이 아닌 공개 컨텍스트 정보**입니다.
-*   **Salt**: 유도되는 키의 엔트로피를 강화하는 무작위/고정 값입니다. 노출되어도 원본 IK(Input Keying Material)를 모르면 키를 유추할 수 없습니다.
-*   **Info**: 파생되는 키의 용도를 구분하는 식별자입니다 (Context Binding). 예: "aes-key", "hmac-key" 등.
-*   **결론**: 이 값들은 프로토콜의 일부로서 공개되어도 안전합니다. 중요한 것은 **ECDH Private Key**와 **HMAC CLIENT_SECRET**입니다.
 
-### 고급 설정 (Advanced Configuration)
-만약 **키 교환의 독립성**과 **컨텍스트 결합**을 더 강화하고 싶다면 다음 설정을 고려할 수 있습니다.
+### 현재 구현
+*   **Salt**: 클라이언트가 매 요청마다 `SecureRandom`으로 생성한 **32바이트 난수** (Dynamic Salt)를 사용합니다. HMAC 서명에 포함되어 무결성이 보장됩니다.
+*   **Info**: `"novel-id:{id}|ts:{timestamp}"` 형식의 **동적 컨텍스트 문자열**을 사용합니다. 이 값은 AES-GCM의 AAD로도 동시에 사용됩니다.
+*   **결론**: Salt는 매 요청마다 새로 생성되므로 Rainbow Table 공격이 불가능하며, Info에 소설 ID와 타임스탬프가 포함되어 키의 용도가 수학적으로 격리됩니다.
 
-**1. Dynamic Salt (동적 솔트)**
-*   **현재**: 고정값(`"novel-api-salt"`) 사용.
-*   **강화**: 클라이언트가 요청 시 `Random Nonce`를 보내고, 이를 Salt로 사용합니다.
-*   **효과**: 설령 ECDH 난수(Ephemeral Key) 생성기에 결함이 있어도, 해커가 미리 계산된 테이블(Rainbow Table)을 사용할 수 없게 만듭니다.
-
-**2. Context-Specific Info (컨텍스트 바인딩)**
-*   **현재**: 고정값(`"aes-gcm-key"`) 사용.
-*   **강화**: `Info = "novel-id:123|user:test"`.
-*   **효과**: 다른 용도(예: 결제 정보)로 생성된 키가 소설 복호화에 절대 사용될 수 없도록 수학적으로 격리합니다.
+### 보안 특성
+*   **Dynamic Salt**: 해커가 미리 계산된 테이블(Rainbow Table)을 사용할 수 없게 만듭니다.
+*   **Context-Specific Info**: 다른 용도(예: 결제 정보)로 생성된 키가 소설 복호화에 절대 사용될 수 없도록 수학적으로 격리합니다.
+*   **AAD 바인딩**: Info 문자열을 AAD로도 사용하여, 올바른 키로 복호화되더라도 요청한 소설 ID나 타임스탬프와 일치하지 않으면 복호화를 거부합니다.
 
 ### 결론
 보안 강화를 위해 약 10ms 내외의 연산 비용이 추가되었으나, 이는 **텍스트 콘텐츠 서비스에서 무시할 수 있는 수준**입니다. 대규모 트래픽 발생 시 서버 CPU 부하가 증가할 수 있으므로, 필요 시 **세션 재사용 (Session Resumption)** 전략을 도입하여 ECDH 연산 횟수를 줄일 수 있습니다.
@@ -109,31 +105,52 @@
 | **키 관리 (Key Mgmt)** | **Static (고정)**. 클라이언트와 서버가 동일한 키를 영구적으로 공유해야 함. | **Ephemeral (일회용)**. 매 요청마다 새로운 세션 키를 생성하고 버림. |
 | **전방 향성 (Forward Secrecy)** | **없음 (X)**. 키가 탈취되면 과거/미래의 모든 암호문이 복호화됨. | **있음 (O)**. 서버의 장기 비밀키가 털려도, 과거의 세션 키는 복구할 수 없음. |
 | **탈취 영향 (Compromise)** | **치명적 (Catastrophic)**. 앱 배포 후 키 변경이 불가능에 가까움 (앱 업데이트 필요). | **제한적 (Limited)**. 탈취된 세션 키는 해당 1회 통신에만 유효함. |
-| **Replay 공격 방어** | 별도 구현 필요 (Timestamp/Nonce 관리). | **기본 내장**. HMAC 서명에 Timestamp가 포함되어 있어 자동 방어됨. |
+| **Replay 공격 방어** | 별도 구현 필요 (Timestamp/Nonce 관리). | **기본 내장**. HMAC 서명에 Timestamp 포함 + Redis Nonce 검증. |
 | **주요 위협** | 키 하드코딩 추출, 패킷 도청 후 복호화. | 실시간 MITM (어렵지만 가능), 클라이언트 로직 변조. |
 
 ### 최종 결론
 **AES-GCM 단독 사용**은 "자물쇠를 잠그고 열쇠를 문 앞에 숨겨두는 것"과 같습니다 (Reverse Engineering으로 키 추출 가능).
 반면, **ECDH 방식**은 "매번 새로운 금고를 만들고 열쇠를 안에서 공유한 뒤 파기하는 것"과 같아, 훨씬 안전합니다.
 
-## 8. 향후 데이터 암호화 고도화 방안 (Future Improvements)
+## 8. Replay Attack 방어 (현재 구현)
 
-### 1) AAD (Additional Authenticated Data) 활용
-*   **현재**: AES-GCM 복호화 시 AAD를 비워두고(`empty`) 있습니다.
-*   **개선**: `novel_id`, `user_id` 등의 메타데이터를 AAD로 입력합니다.
-*   **효과**: **컨텍스트 바인딩 (Context Binding)**. 암호문이 올바른 키로 복호화되더라도, 요청한 소설 ID나 사용자 ID와 일치하지 않으면 복호화를 거부하게 됩니다. (논리적 무결성 강화)
+### Redis 기반 Nonce 검증
+*   **구현**: `ReplayGuardService`에서 `(publicKey + timestamp + salt)`의 SHA-256 해시를 Redis에 저장합니다.
+*   **메커니즘**: `SETNX` (Set if Not eXists) + 5분 TTL
+    *   키가 없으면 설정하고 요청 통과
+    *   키가 이미 있으면 중복 요청으로 판단하고 거부
+*   **방어**: 공격자가 유효한 요청을 캡처하여 재전송하더라도, Redis에 이미 기록되어 있으므로 차단됩니다.
+*   **주의**: Redis 장애 시 전체 API가 영향을 받을 수 있으므로, 가용성/보안 정책에 따라 fallback 전략이 필요합니다.
 
-### 2) Zeroization (메모리 소거)
+## 9. 에러 처리 (Error Handling)
+
+### 현재 구현
+*   인증 실패(타임스탬프, 서명, Replay) 시 `ResponseStatusException(HttpStatus.UNAUTHORIZED)` — **HTTP 401 Unauthorized** 반환
+*   암호화 처리 실패 시 `ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR)` — **HTTP 500 Internal Server Error** 반환
+*   모든 에러 응답은 **동일한 메시지("Unauthorized")**를 반환하여, 실패 원인(타임스탬프인지, 서명인지, Replay인지)을 공격자에게 노출하지 않습니다.
+
+## 10. 향후 데이터 암호화 고도화 방안 (Future Improvements)
+
+### 1) Zeroization (메모리 소거)
 *   **Java/JS**: 언어(Java, JS)의 GC에 메모리 관리를 의존합니다 (제한적).
 *   **Wasm (Rust)**: `zeroize` 크레이트를 사용하여, **키 사용 직후 메모리를 0으로 강제 소거하도록 구현되었습니다.**
 *   **효과**: 램 덤프(RAM Dump) 공격 시 키 잔존 가능성을 최소화합니다. (Rust/C++ 클라이언트에서 가장 효과적)
 
-### 3) 저장소 암호화 (Data-At-Rest Encryption)
+### 2) 저장소 암호화 (Data-At-Rest Encryption)
 *   **현재**: 전송 구간(Transit)만 암호화하고 있습니다.
 *   **개선**: 서버 DB에 소설 내용을 저장할 때도 AES-256으로 암호화하여 저장합니다.
 *   **효과**: 서버 해킹으로 DB 파일이 유출되어도 원본 내용을 보호할 수 있습니다.
 
-## 9. ECDH 키 검증 및 확인 (Key Validation & Confirmation)
+### 3) User Session Binding (사용자 세션 바인딩)
+*   **동작**: 키 교환 요청 헤더에 **로그인 세션 토큰(JWT/SessionID)**을 포함시킵니다.
+*   **효과**: "우리 앱 사용자(로그인됨)"임이 확인된 경우에만 키 교환을 허용합니다.
+*   **구현**: `NovelController`에 Spring Security 또는 Interceptor를 적용하여 `@PreAuthorize("isAuthenticated()")` 검사를 수행합니다.
+
+### 4) Rate Limiting (요청 제한)
+*   **동작**: 동일 IP나 세션에서 과도한 키 교환 요청 시 차단합니다.
+*   **효과**: DoS 공격이나 무차별 대입 공격 방어.
+
+## 11. ECDH 키 검증 및 확인 (Key Validation & Confirmation)
 HMAC이 **"요청자가 누구인가"**를 검증한다면, 키 검증은 **"교환된 키가 안전한가"**를 보장합니다.
 
 ### 1) Public Key Validation (ECC Point Validation)
@@ -144,38 +161,19 @@ HMAC이 **"요청자가 누구인가"**를 검증한다면, 키 검증은 **"교
 ### 2) Key Confirmation (키 확약)
 *   **개념**: 키 교환 직후, 양쪽이 동일한 비밀키(Shared Secret)를 생성했는지 확인하는 절차입니다.
 *   **현재 구현 (Implicit)**: 별도의 확인 메시지 없이, **AES-GCM 암호화** 자체가 키 확약 역할을 합니다.
+
 ### 3) Salt Integrity (Salt 무결성)
 *   **구현**: `HMAC Signature` 생성 시 `Salt`를 포함하여 서명합니다.
 *   **서명 데이터**: `PublicKey + Timestamp + Salt`
 *   **효과**: 전송 중 Salt가 변조되면 서명 검증 단계에서 즉시 차단됩니다.
 *   **참고 (Explicit)**: 더 명시적인 확인이 필요하다면, 핸드셰이크 단계에서 `HMAC(SessionKey, "Confirmation")` 값을 주고받도록 프로토콜을 확장할 수 있습니다.
 
-### 3) Proof of Possession (키 소유 증명)
-*   **방법**: 클라이언트가 ECDH 일회용 키(Ephemeral Key)로 무작위 값(Nonce)을 서명하여 전송. (ECDSA)
-*   **주의**: ECDH 키를 서명용으로 혼용하는 것은 보안 권장사항(NIST)에 어긋날 수 있어 신중해야 합니다. 일반적으로는 **Key Confirmation**만으로 충분합니다.
-
-## 10. 비인가 ECDH 요청 방어 (Defense against Unauthorized Exchange)
-"누구나 ECDH 키를 만들어 요청하면 서버가 받아주는가?"에 대한 방어책입니다.
-
-### 1) HMAC Client Authentication (1차 방어 - 현재 적용됨)
-*   **동작**: 클라이언트는 ECDH 공개키를 보낼 때, `HMAC(PublicKey + Timestamp, CLIENT_SECRET)` 서명을 동봉해야 합니다.
-*   **효과**: `CLIENT_SECRET`을 모르는 공격자가 무작위로 생성한 ECDH 키로 요청을 보내면, **서버는 서명 검증 단계에서 즉시 거부(Reject)**합니다. 즉, ECDH 연산을 수행하지 않으므로 자원 소모도 최소화됩니다.
-
-### 2) User Session Binding (2차 방어 - 권장)
-*   **동작**: 키 교환 요청 헤더에 **로그인 세션 토큰(JWT/SessionID)**을 포함시킵니다.
-*   **효과**: "우리 앱 사용자(로그인됨)"임이 확인된 경우에만 키 교환을 허용합니다.
-*   **구현**: `NovelController`에 Spring Security 또는 Interceptor를 적용하여 `@PreAuthorize("isAuthenticated()")` 검사를 수행합니다.
-
-### 3) Rate Limiting (3차 방어)
-*   **동작**: 동일 IP나 세션에서 과도한 키 교환 요청 시 차단합니다.
-*   **효과**: DoS 공격이나 무차별 대입 공격 방어.
-
-## 11. AES-GCM 보안 강화 및 고도화 (Advanced Hardening)
+## 12. AES-GCM 보안 강화 및 고도화 (Advanced Hardening)
 현재 구현은 충분히 안전하지만, 극단적인 보안 요구사항이나 대규모 환경을 위해 고려할 수 있는 추가적인 강화 요소입니다.
 
 ### 1) Nonce Reuse Resistance (IV 재사용 방지)
 *   **배경**: AES-GCM은 **(Key, IV)** 쌍이 단 한 번이라도 중복되면 심각한 보안 사고(인증 키 복구 가능)로 이어집니다.
-*   **현재 상황**: 매 요청마다 새로운 Key를 생성(Ephemeral)하므로, IV가 중복되더라도 Key가 다르기 때문에 안전합니다.
+*   **현재 상황**: 매 요청마다 새로운 Key를 생성(Ephemeral)하므로, IV가 중복되더라도 Key가 다르기 때문에 안전합니다. 단, 스트리밍에서는 동일 Session Key로 여러 Chunk를 암호화하므로 각 Chunk마다 독립된 IV를 생성합니다.
 *   **강화 방안**: 만약 Long-Lived Session Key를 사용하게 된다면, **AES-GCM-SIV** 또는 **XChaCha20-Poly1305** 도입을 권장합니다.
     *   **AES-GCM-SIV**: IV가 중복되어도 키가 노출되지 않는(Nonce misuse-resistant) 구조입니다.
     *   **XChaCha20**: 192-bit Nonce를 사용하여 랜덤 충돌 확률을 수학적으로 0에 수렴시킵니다.
@@ -187,5 +185,5 @@ HMAC이 **"요청자가 누구인가"**를 검증한다면, 키 검증은 **"교
 
 ### 3) Chunked Encryption (청크 단위 암호화)
 *   **배경**: 수백 MB 이상의 대용량 소설을 한 번에 암호화하면 메모리 부족(OOM)이 발생할 수 있습니다.
-*   **방안**: 데이터를 64KB~1MB 단위(Chunk)로 쪼개서 각각 독립적으로 IV를 부여하고 암호화합니다.
+*   **현재 구현**: SSE 기반 스트리밍 API(`POST /api/novels/{id}/stream`)에서 코드포인트 기반으로 한글을 인식하여 Chunk 단위 분할 및 개별 암호화를 지원합니다.
 *   **효과**: 스트리밍(Streaming) 처리가 가능해지며, 단일 키로 암호화하는 데이터 양을 제한하여 GCM의 한계(64GB)를 회피할 수 있습니다.

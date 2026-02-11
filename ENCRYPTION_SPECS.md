@@ -32,7 +32,6 @@
     *   응답: `{ publicKey, content }`
 
 ### 흐름도 (Sequence Diagram)
-```mermaid
 sequenceDiagram
     participant Client
     participant Server
@@ -42,7 +41,7 @@ sequenceDiagram
     Note over Client: 3. Timestamp 생성
     Note over Client: 4. Signature = HMAC(PublicKey + Timestamp + Salt, ClientSecret)
     
-    Client->>Server: POST /api/novels/{id}<br/>{ publicKey, timestamp, signature, salt }
+    Client->>Server: POST /api/novels/{entryId}<br/>{ publicKey, timestamp, signature, salt }
     
     Note over Server: 5. Timestamp 검증 (5분 이내)
     Note over Server: 6. Signature 검증 (HMAC 일치 확인)
@@ -58,7 +57,7 @@ sequenceDiagram
     end
 
     Note over Client: 11. ECDH Shared Secret 계산
-    Note over Client: 12. AES Session Key 유도 (HKDF)<br/>Salt & Info 동일 사용
+    Note over Client: 12. AES Session Key 유도 (HKDF)<br/>(Android: Tink, iOS: CryptoKit, Web: WebCrypto)<br/>Salt & Info 동일 사용
     Note over Client: 13. Content 복호화 (AAD 검증 포함)
 ```
 

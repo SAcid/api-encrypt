@@ -23,7 +23,7 @@ object CryptoManager {
     private const val TAG_LENGTH_BIT = 128
     
     // 클라이언트 인증 시크릿 (실제 앱에서는 안전하게 보호해야 함)
-    private const val CLIENT_SECRET = "auth-secret-1234"
+    private const val HMAC_SECRET = "auth-secret-1234"
     
     // private val HKDF_SALT = ... (Dynamic Salt 사용)
     // private val HKDF_INFO = ... (Dynamic Info 사용)
@@ -42,7 +42,7 @@ object CryptoManager {
         val data = publicKeyBase64 + timestamp + saltBase64
         
         val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(CLIENT_SECRET.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
+        mac.init(SecretKeySpec(HMAC_SECRET.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
         
         val signatureBytes = mac.doFinal(data.toByteArray(StandardCharsets.UTF_8))
         val signatureBase64 = Base64.encodeToString(signatureBytes, Base64.NO_WRAP)

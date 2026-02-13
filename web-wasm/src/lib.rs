@@ -23,7 +23,7 @@ extern "C" {
     fn log(s: &str);
 }
 
-const CLIENT_SECRET: &[u8] = b"auth-secret-1234";
+const HMAC_SECRET: &[u8] = b"auth-secret-1234";
 // HKDF Constants removed - using dynamic values
 // const HKDF_SALT: &[u8] = b"novel-api-salt";
 // const HKDF_INFO: &[u8] = b"aes-gcm-key";
@@ -77,7 +77,7 @@ impl CryptoManager {
         let data_to_sign = format!("{}{}{}", self.public_key_base64, timestamp, salt_base64);
         
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(CLIENT_SECRET)
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(HMAC_SECRET)
             .map_err(|_| JsValue::from_str("HMAC Init Failed"))?;
         
         mac.update(data_to_sign.as_bytes());

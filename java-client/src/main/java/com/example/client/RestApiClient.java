@@ -18,7 +18,7 @@ import java.util.Base64;
 public class RestApiClient {
     private static final String SERVER_URL = "http://localhost:8080/api/novels/1";
     // 주의: 실제 환경에서는 안전하게 관리해야 함
-    private static final String CLIENT_SECRET = "auth-secret-1234";
+    private static final String HMAC_SECRET = "auth-secret-1234";
 
     private final OkHttpClient client = new OkHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -44,7 +44,7 @@ public class RestApiClient {
         new SecureRandom().nextBytes(saltBytes);
         String salt = Base64.getEncoder().encodeToString(saltBytes);
         String dataToSign = clientPublicKey + timestamp + salt;
-        String signature = CryptoUtil.generateHmacSignature(dataToSign, CLIENT_SECRET);
+        String signature = CryptoUtil.generateHmacSignature(dataToSign, HMAC_SECRET);
 
         // 3. 요청 JSON 구성
         String jsonBody = String.format(

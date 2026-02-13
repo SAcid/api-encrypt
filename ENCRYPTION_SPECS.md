@@ -21,7 +21,7 @@
     *   ECDH 키 쌍 생성 (`Client Public Key`).
     *   **Random Salt 생성**: 32 bytes 난수 (Base64).
     *   현재 시간 `timestamp` (Unix Epoch Milliseconds) 생성.
-    *   **서명 생성**: `Signature` = HMAC-SHA256(`Client Public Key` + `timestamp` + `Salt`, `CLIENT_SECRET`).
+    *   **서명 생성**: `Signature` = HMAC-SHA256(`Client Public Key` + `timestamp` + `Salt`, `HMAC_SECRET`).
     *   전송: `{ publicKey, timestamp, signature, salt }`
 
 2.  **Server (서버)**:
@@ -85,7 +85,7 @@ sequenceDiagram
 
 #### Step 4: 클라이언트 인증 서명 생성 (Client Authentication)
 *   **Algorithm**: `HMAC-SHA256`
-*   **Secret**: `CLIENT_SECRET` ("auth-secret-1234")
+*   **Secret**: `HMAC_SECRET` ("auth-secret-1234")
 *   **Data to Sign**: `ClientPublicKey(Base64)` + `Timestamp(Long as String)` + `Salt(Base64)`
 *   **출력**: `Signature` (Base64)
 
@@ -177,6 +177,6 @@ sequenceDiagram
 *   **각 Chunk는 동일한 Session Key + 독립된 IV로 암호화됩니다.**
 
 ## 참고 정보 (Demo)
-*   **CLIENT_SECRET**: `auth-secret-1234`
+*   **HMAC_SECRET**: `auth-secret-1234`
 *   **REST API**: `POST http://localhost:8080/api/novels/1`
 *   **Streaming API**: `POST http://localhost:8080/api/novels/1/stream?chunkSize=100`

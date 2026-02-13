@@ -5,7 +5,7 @@ class CryptoManager {
     static let shared = CryptoManager()
     
     // Auth Secret (실제 앱에서는 난독화하거나 안전하게 보관해야 함)
-    private let clientSecret = "auth-secret-1234".data(using: .utf8)!
+    private let hmacSecret = "auth-secret-1234".data(using: .utf8)!
     
     // HKDF용 Salt와 Info는 이제 동적으로 생성됩니다.
     // private let hkdfSalt = ...
@@ -64,7 +64,7 @@ class CryptoManager {
             return
         }
         
-        let symmetricKey = SymmetricKey(data: clientSecret)
+        let symmetricKey = SymmetricKey(data: hmacSecret)
         let signature = HMAC<SHA256>.authenticationCode(for: dataToSign, using: symmetricKey)
         let signatureBase64 = Data(signature).base64EncodedString()
         // -----------------------

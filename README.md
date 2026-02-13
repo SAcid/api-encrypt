@@ -49,7 +49,7 @@ api-encrypt/
     - 페이로드: `{ publicKey, timestamp, signature, salt }`
 2.  **서버 검증** (3단계):
     - **타임스탬프 검증**: 요청 시간이 5분 이내인지 확인합니다.
-    - **HMAC 서명 검증**: `PublicKey + Timestamp + Salt`를 `CLIENT_SECRET`으로 서명하여 일치 여부를 확인합니다.
+    - **HMAC 서명 검증**: `PublicKey + Timestamp + Salt`를 `HMAC_SECRET`으로 서명하여 일치 여부를 확인합니다.
     - **Replay Attack 방어**: Redis SETNX로 동일 요청의 재사용을 차단합니다.
 3.  **키 유도**:
     - ECDH를 통해 `공유 비밀(Shared Secret)`을 계산합니다.
@@ -113,7 +113,7 @@ cd java-client
 
 이 예제 코드는 학습 및 데모 목적으로 작성되었습니다. 실제 서비스 도입 시 다음 사항을 반드시 보완해야 합니다.
 
-1.  **Client Secret 관리**:
+1.  **HMAC Secret 관리**:
     *   현재 코드에는 클라이언트 인증을 위해 `auth-secret-1234`가 하드코딩되어 있습니다.
     *   **개선 필요**: 실제 환경에서는 앱 내에 Secret을 저장하지 말고, 사용자 로그인 후 발급받은 **일회성 세션 토큰** 등을 사용하여 인증해야 합니다.
 2.  **HTTPS 사용**:

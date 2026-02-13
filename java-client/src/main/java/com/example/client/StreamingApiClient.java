@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class StreamingApiClient {
     private static final String SERVER_URL = "http://localhost:8080/api/novels/1/stream";
-    private static final String CLIENT_SECRET = "auth-secret-1234";
+    private static final String HMAC_SECRET = "auth-secret-1234";
 
     private final OkHttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -57,7 +57,7 @@ public class StreamingApiClient {
         String salt = Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes());
 
         String dataToSign = clientPublicKey + timestamp + salt;
-        String signature = CryptoUtil.generateHmacSignature(dataToSign, CLIENT_SECRET);
+        String signature = CryptoUtil.generateHmacSignature(dataToSign, HMAC_SECRET);
 
         String jsonBody = String.format(
                 "{\"publicKey\":\"%s\",\"timestamp\":%d,\"signature\":\"%s\",\"salt\":\"%s\"}",

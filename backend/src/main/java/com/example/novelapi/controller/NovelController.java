@@ -27,9 +27,9 @@ public class NovelController {
 
     private static final Logger log = LoggerFactory.getLogger(NovelController.class);
 
-    // 클라이언트 인증을 위한 비밀 키 (환경 변수 NOVEL_CLIENT_SECRET 또는 application.properties에서 주입)
-    @Value("${novel.client-secret}")
-    private String clientSecret;
+    // 클라이언트 인증을 위한 비밀 키 (환경 변수 NOVEL_HMAC_SECRET 또는 application.properties에서 주입)
+    @Value("${novel.hmac-secret}")
+    private String hmacSecret;
 
     private final ReplayGuardService replayGuardService;
 
@@ -62,7 +62,7 @@ public class NovelController {
             // 서명 대상 데이터: 공개키 + 타임스탬프 + Salt (무결성 강화)
             String dataToSign = request.publicKey() + request.timestamp() + request.salt();
             // 서버가 가진 Secret으로 서명 재계산
-            String expectedSignature = CryptoUtil.generateHmacSignature(dataToSign, clientSecret);
+            String expectedSignature = CryptoUtil.generateHmacSignature(dataToSign, hmacSecret);
 
             // 클라이언트가 보낸 서명과 일치하는지 확인 (Timing Attack 방지: MessageDigest.isEqual 사용)
             if (!java.security.MessageDigest.isEqual(

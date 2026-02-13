@@ -23,7 +23,7 @@
 ---
 
 ## 1. 키 및 Secret 보호 (Key Protection)
-소스 코드에 하드코딩된 `CLIENT_SECRET`은 디컴파일 시 노출될 위험이 있습니다.
+소스 코드에 하드코딩된 `HMAC_SECRET`은 디컴파일 시 노출될 위험이 있습니다.
 
 *   **Mobile (Android/iOS)**:
     *   **Keystore / Keychain**: OS가 제공하는 안전한 저장소에 키를 보관합니다.

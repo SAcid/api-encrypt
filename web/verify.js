@@ -1,7 +1,7 @@
 const { webcrypto } = require('node:crypto');
 const crypto = webcrypto;
 
-const CLIENT_SECRET = "auth-secret-1234";
+const HMAC_SECRET = "auth-secret-1234";
 
 async function verifyAuthLogic() {
     console.log("Starting Web Client Logic Verification (Node.js)...");
@@ -32,7 +32,7 @@ async function verifyAuthLogic() {
 
         const secretKey = await crypto.subtle.importKey(
             "raw",
-            infoEncoder.encode(CLIENT_SECRET),
+            infoEncoder.encode(HMAC_SECRET),
             { name: "HMAC", hash: "SHA-256" },
             false,
             ["sign"]

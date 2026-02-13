@@ -35,7 +35,7 @@
     <div id="log" class="log"></div>
 
     <script>
-        const CLIENT_SECRET = "auth-secret-1234";
+        const HMAC_SECRET = "auth-secret-1234";
 
         function log(msg) {
             const logDiv = document.getElementById('log');
@@ -66,7 +66,7 @@
 
                 const secretKey = await window.crypto.subtle.importKey(
                     "raw",
-                    infoEncoder.encode(CLIENT_SECRET),
+                    infoEncoder.encode(HMAC_SECRET),
                     { name: "HMAC", hash: "SHA-256" },
                     false,
                     ["sign"]

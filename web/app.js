@@ -1,5 +1,5 @@
 const API_URL = 'http://localhost:8080/api/novels/1';
-const CLIENT_SECRET = "auth-secret-1234"; // 주의: 실제 서비스에서는 이 값을 난독화하거나 보호해야 합니다.
+const HMAC_SECRET = "auth-secret-1234"; // 주의: 실제 서비스에서는 이 값을 난독화하거나 보호해야 합니다.
 
 async function fetchAndDecrypt() {
     const statusDiv = document.getElementById('status');
@@ -42,7 +42,7 @@ async function fetchAndDecrypt() {
         // HMAC 키 import
         const secretKey = await window.crypto.subtle.importKey(
             "raw",
-            infoEncoder.encode(CLIENT_SECRET),
+            infoEncoder.encode(HMAC_SECRET),
             { name: "HMAC", hash: "SHA-256" },
             false,
             ["sign"]
